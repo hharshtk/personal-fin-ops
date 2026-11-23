@@ -25,6 +25,8 @@ npm run build
 | `src/components/calendar/MonthSheet.tsx` | The month calendar used on the overview and in Bills & calendar. |
 | `src/components/charts/` | Dependency-free charts (trend line, grouped/stacked columns, segmented bar). |
 | `src/app/arthashala.css` | Design tokens (light and dark), component classes, browser-surface theming. |
+| `src/app/api/v1/` | HTTP API route handlers. `transcriptions` turns a voice clip into text and reports its cost: Whisper on Groq by default (`GROQ_API_KEY`), or OpenAI and Google models through Vercel AI Gateway (`AI_GATEWAY_API_KEY`). `ai-credits` returns the gateway's credit balance. Keys go in `.env.local`. The supported models, their approximate prices and the request contract are in `src/lib/transcription.ts`. You choose the model in Settings › Voice input. |
+| `src/components/chat/` | Ask AI panel. Sample replies come from `preview-transport.ts`. The mic button records with `useDictation.ts`, which needs HTTPS or localhost. |
 
 ## Conventions
 

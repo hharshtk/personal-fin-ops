@@ -198,6 +198,7 @@ Copy into the PR description, or have your agent go through it before finishing.
 | G8 | Policies, goals, assets, commitments and transactions have no URL of their own. `entityHref` falls back to the list page. | 8 | [index.ts:553](src/lib/data/index.ts#L553) |
 | G9 | Records have no `createdAt`, `updatedAt` or `deletedAt`, and session deletes are hard deletes. | 6, 7 | [types.ts](src/lib/types.ts), [state.tsx](src/components/workspace/state.tsx) |
 | G10 | Account-level preferences live in session-only React state and have no profile to sync to. | 11 | [state.tsx:12-32](src/components/workspace/state.tsx#L12-L32) |
+| G11 | `POST /api/v1/transcriptions` (voice input) and `GET /api/v1/ai-credits` have no auth and no OpenAPI description. Anyone who can reach a deployment can spend AI Gateway credits and the Groq allowance through the first, and read the gateway balance through the second. Until bearer auth exists, keep deployments behind Vercel Deployment Protection. Add both endpoints to the OpenAPI document when that document is created. | 4 | [transcriptions](src/app/api/v1/transcriptions/route.ts), [ai-credits](src/app/api/v1/ai-credits/route.ts) |
 
 ---
 

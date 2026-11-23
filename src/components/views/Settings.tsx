@@ -1,9 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { RotateCcw } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { RotateCcw, RotateCw } from "lucide-react";
+import type { AiCredits } from "@/lib/ai-credits";
 import { AS_OF, PROFILE } from "@/lib/data";
-import { formatDate, formatMoney, fyLabel } from "@/lib/format";
+import { formatDate, formatMoney, formatUsd, fyLabel } from "@/lib/format";
+import { TRANSCRIPTION_MODELS } from "@/lib/transcription";
 import { useEmployeeEquity, useLedger, usePrefs, useUI, type Prefs } from "@/components/workspace/state";
 import { useDensity, useRail, useTheme, type ThemePref } from "@/components/shell/theme";
 import { PageHeader } from "@/components/ui/primitives";
@@ -51,12 +53,90 @@ function Seg<T extends string>({ value, options, onChange, label }: { value: T; 
   );
 }
 
+function TranscriptionModelPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const cheapest = Math.min(...TRANSCRIPTION_MODELS.map((model) => Number(model.usdPerMinute)));
+  return (
+    <fieldset className="py-3.5">
+      <legend className="text-sm font-medium text-ink">Transcription model</legend>
+      <p className="mt-0.5 max-w-[60ch] text-xs text-ink-3">
+        Turns what you say in Ask AI into text. Groq models bill your Groq account, which has a free plan with a daily allowance. OpenAI and Google models run through Vercel AI Gateway and bill your gateway credits. Prices are approximate, per minute of audio.
+      </p>
+      <div className="mt-3 divide-y divide-rule border-y border-rule">
+        {TRANSCRIPTION_MODELS.map((model) => (
+          <label key={model.id} className="flex min-h-11 cursor-pointer items-center gap-3 px-2 py-2 hover:bg-paper-2 has-checked:bg-pen-wash">
+            <input type="radio" name="transcription-model" value={model.id} checked={value === model.id} onChange={() => onChange(model.id)} className="size-4 shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-ink">{model.name}</span>
+              <span className="block text-xs text-ink-3">
+                {[
+                  model.provider,
+                  model.freePlan && "free plan",
+                  Number(model.usdPerMinute) === cheapest && "lowest cost",
+                  model.retiresOn && `retires ${formatDate(model.retiresOn)}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </span>
+            <span className="num shrink-0 text-sm text-ink-2">{formatUsd(model.usdPerMinute)}/min</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function AiCreditsBalance() {
+  const [credits, setCredits] = useState<AiCredits | "loading" | "error">("loading");
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let current = true;
+    fetch("/api/v1/ai-credits", { cache: "no-store" })
+      .then((response) => (response.ok ? (response.json() as Promise<AiCredits>) : Promise.reject(new Error(String(response.status)))))
+      .then((data) => current && setCredits(typeof data?.balance?.amount === "string" ? data : "error"))
+      .catch(() => current && setCredits("error"));
+    return () => {
+      current = false;
+    };
+  }, [attempt]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-ink-2" aria-live="polite">
+        {credits === "loading" && "Checking…"}
+        {credits === "error" && "Couldn’t load the balance"}
+        {typeof credits === "object" && (
+          <>
+            <span className="num font-medium text-ink">{formatUsd(credits.balance.amount)}</span> left ·{" "}
+            <span className="num">{formatUsd(credits.used.amount)}</span> used
+          </>
+        )}
+      </span>
+      <button
+        type="button"
+        className="btn btn-ghost btn-icon size-11 text-ink-2 md:size-8"
+        aria-label="Refresh credit balance"
+        title="Refresh credit balance"
+        disabled={credits === "loading"}
+        onClick={() => {
+          setCredits("loading");
+          setAttempt((n) => n + 1);
+        }}
+      >
+        <RotateCw size={14} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "numbers", label: "Numbers & currency" },
   { id: "calendar", label: "Financial year & calendar" },
   { id: "alerts", label: "Reminders & alerts" },
   { id: "defaults", label: "Default views" },
+  { id: "voice", label: "Voice input" },
   { id: "data", label: "Data" },
 ];
 
@@ -226,6 +306,16 @@ export function SettingsView() {
             </Row>
           </section>
 
+          <section id="voice" aria-labelledby="h-voice" className="scroll-mt-16">
+            <h2 id="h-voice" className="section-title mb-1">
+              Voice input
+            </h2>
+            <TranscriptionModelPicker value={prefs.transcriptionModel} onChange={set("transcriptionModel")} />
+            <Row label="AI Gateway credits" hint="Used by the OpenAI and Google models above and shared by every AI feature on this app’s gateway key. Each recording’s cost also appears in Ask AI once it’s transcribed.">
+              <AiCreditsBalance />
+            </Row>
+          </section>
+
           <section id="data" aria-labelledby="h-data" className="scroll-mt-16">
             <h2 id="h-data" className="section-title mb-1">
               Data
@@ -247,7 +337,7 @@ export function SettingsView() {
                 <RotateCcw size={14} aria-hidden /> Undo {sessionChanges || "no"} {sessionChanges === 1 ? "change" : "changes"}
               </button>
             </Row>
-            <Row label="Preferences" hint="Number, calendar and alert settings above.">
+            <Row label="Preferences" hint="Number, calendar, alert and voice settings above.">
               <button
                 type="button"
                 className="btn"

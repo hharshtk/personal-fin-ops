@@ -88,6 +88,20 @@ export function formatPct(value: number, { decimals = 1, sign = false } = {}): s
   return `${p}${s}%`;
 }
 
+const USD_CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const USD_SMALL = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumSignificantDigits: 2 });
+
+/**
+ * US dollars from AI Gateway billing, given as the wire's decimal string.
+ * Amounts under a cent keep two significant digits ($0.00011) so a single
+ * clip's cost doesn't read as $0.00.
+ */
+export function formatUsd(amount: string): string {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return amount;
+  return value !== 0 && Math.abs(value) < 0.01 ? USD_SMALL.format(value) : USD_CENTS.format(value);
+}
+
 /* ───────────────────────── Dates ─────────────────────────
  * Dates are plain ISO strings. All math is done in UTC on date-only values
  * so server and browser render identical output (no locale/timezone drift).

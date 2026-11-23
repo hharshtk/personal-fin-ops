@@ -6,6 +6,7 @@ import type { EntityRef, EquityActivity, EquityMarketInput, EquityPlan, EquityPl
 import { EQUITY_MARKET_INPUTS, EQUITY_PLANS, TRANSACTIONS } from "@/lib/data";
 import { upsertEquityInput, upsertEquityPlan } from "@/lib/employee-equity";
 import { paidOccurrenceIds } from "@/lib/payments";
+import { TRANSCRIPTION_DEFAULT_MODEL } from "@/lib/transcription";
 
 /* ───────────── Preferences (session only) ───────────── */
 
@@ -18,6 +19,8 @@ export interface Prefs {
   budgetAlertAt: number;
   defaultTxnPeriod: "month" | "90d" | "fy" | "all";
   showPaise: boolean;
+  /** Account-level (Article 11): an AI Gateway model id from TRANSCRIPTION_MODELS. */
+  transcriptionModel: string;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -29,6 +32,8 @@ const DEFAULT_PREFS: Prefs = {
   budgetAlertAt: 90,
   defaultTxnPeriod: "month",
   showPaise: false,
+  // The cheapest model, so a reset never costs more.
+  transcriptionModel: TRANSCRIPTION_DEFAULT_MODEL,
 };
 
 interface PrefsCtx {

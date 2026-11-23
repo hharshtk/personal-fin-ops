@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { CheckCircle2, CircleAlert, MessageCircle, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, CircleAlert, MessageCircle, X } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { CommandPalette } from "./CommandPalette";
@@ -187,13 +187,16 @@ function Frame({ children }: { children: ReactNode }) {
   const chatPanelId = chatOpen === null ? undefined : CHAT_PANEL_ID;
   const overlay = useSyncExternalStore(subscribeInspectorOverlay, () => inspectorOverlay().matches, () => false);
   const inspectorModal = overlay && (inspector?.kind.includes("equity") ?? false);
+  // From xl the inspector is a 400px column on the right edge with its actions at the bottom.
+  // Dock the launcher and chat just left of it so they never cover Save.
+  const chatDock = inspector ? "xl:right-[calc(400px+1rem)]" : undefined;
   return (
     <div className="flex min-h-dvh bg-paper">
       <a href="#main" inert={inspectorModal} className="sr-only z-[80] rounded-[3px] bg-pen px-3 py-2 text-white focus:not-sr-only focus:fixed focus:top-2 focus:left-2">
         Skip to content
       </a>
       <div className="contents" inert={inspectorModal}>
-        <Sidebar chatOpen={chatOpen === true} chatPanelId={chatPanelId} onToggleChat={() => setChatOpen((open) => !open)} />
+        <Sidebar />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="contents" inert={inspectorModal}><Topbar /></div>
@@ -208,19 +211,24 @@ function Frame({ children }: { children: ReactNode }) {
         type="button"
         data-noprint
         inert={navOpen || paletteOpen || (overlay && !!inspector)}
-        className="btn btn-primary fixed top-[calc(100dvh-max(1rem,env(safe-area-inset-bottom)))] left-[calc(100vw-1rem)] z-[25] h-11 -translate-full gap-2 rounded-full px-4 text-base shadow-[var(--shadow-pop)] md:hidden"
+        className={cx(
+          "btn btn-primary btn-icon fixed top-[calc(100dvh-max(1rem,env(safe-area-inset-bottom)))] left-[calc(100vw-1rem)] z-[25] size-12 -translate-full rounded-full shadow-[var(--shadow-pop)]",
+          "md:top-auto md:right-4 md:bottom-4 md:left-auto md:translate-none",
+          chatDock,
+        )}
+        aria-label="Ask AI"
+        title={chatOpen ? "Close Ask AI" : "Ask AI"}
         aria-haspopup="dialog"
         aria-controls={chatPanelId}
         aria-expanded={chatOpen === true}
         onClick={(event) => {
           event.currentTarget.focus({ preventScroll: true });
-          setChatOpen(true);
+          setChatOpen((open) => !open);
         }}
       >
-        <MessageCircle size={18} aria-hidden />
-        Ask AI
+        {chatOpen ? <ChevronDown size={24} aria-hidden /> : <MessageCircle size={22} aria-hidden />}
       </button>
-      {chatOpen !== null && <ChatPanel id={CHAT_PANEL_ID} open={chatOpen} onClose={() => setChatOpen(false)} />}
+      {chatOpen !== null && <ChatPanel id={CHAT_PANEL_ID} open={chatOpen} dockClassName={chatDock} onClose={() => setChatOpen(false)} />}
       <CommandPalette />
       <ShortcutsDialog />
       <Toasts />

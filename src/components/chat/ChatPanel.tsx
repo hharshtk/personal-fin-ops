@@ -1,12 +1,47 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { ArrowUp, ArrowUpLeft, MessageCircle, SquarePen, X } from "lucide-react";
+import { ArrowUp, ArrowUpLeft, MessageCircle, Mic, Square, SquarePen, X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { cx } from "@/components/ui/cx";
+import { usePrefs } from "@/components/workspace/state";
+import { formatUsd } from "@/lib/format";
+import { TRANSCRIPTION_MAX_SECONDS, transcriptionModel, type Transcription } from "@/lib/transcription";
 import { previewTransport, starterPrompts } from "./preview-transport";
+import { dictationMessage, useDictation, type DictationState } from "./useDictation";
 
-export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; onClose: () => void }) {
+const MOBILE_QUERY = "(width < 48rem)";
+
+const dictationLabels: Record<DictationState, string> = {
+  idle: "Dictate a message",
+  starting: "Starting microphone",
+  recording: "Stop and transcribe",
+  transcribing: "Transcribing",
+};
+
+const dictationStatus: Record<DictationState, string> = {
+  idle: "",
+  starting: "Starting microphone…",
+  recording: "Listening",
+  transcribing: "Transcribing…",
+};
+
+const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+/** Dictated text joins the end of the draft so it can be reviewed before sending. */
+function appendDictation(draft: string, text: string) {
+  if (!draft.trim()) return text;
+  return /\s$/.test(draft) ? draft + text : `${draft} ${text}`;
+}
+
+export function ChatPanel({ id, open, dockClassName, onClose }: {
+  id: string;
+  open: boolean;
+  /** Overrides the floating panel's right offset so it stays above the launcher. */
+  dockClassName?: string;
+  onClose: () => void;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -16,6 +51,18 @@ export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; on
     transport: previewTransport,
   });
   const busy = status === "submitted" || status === "streaming";
+  const { prefs } = usePrefs();
+  const voiceModel = transcriptionModel(prefs.transcriptionModel);
+  const [lastClip, setLastClip] = useState<Transcription | null>(null);
+  const clipModel = lastClip ? transcriptionModel(lastClip.model) : undefined;
+  const clipModelName = clipModel?.name ?? lastClip?.model;
+  const dictation = useDictation((result) => {
+    setDraft((current) => appendDictation(current, result.text));
+    setLastClip(result);
+    if (!window.matchMedia(MOBILE_QUERY).matches) inputRef.current?.focus({ preventScroll: true });
+  });
+  const dictating = dictation.state !== "idle";
+  const recording = dictation.state === "recording";
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -25,7 +72,7 @@ export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; on
       return;
     }
 
-    const mobile = window.matchMedia("(width < 48rem)");
+    const mobile = window.matchMedia(MOBILE_QUERY);
     const viewport = window.visualViewport;
     const resizeSheet = () => {
       if (!mobile.matches || !viewport) return;
@@ -62,6 +109,8 @@ export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; on
     const text = draft.trim();
     if (!text || busy) return;
     setDraft("");
+    setLastClip(null);
+    dictation.clearError();
     void sendMessage({ text });
     inputRef.current?.focus({ preventScroll: true });
   }
@@ -74,7 +123,9 @@ export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; on
       aria-describedby="chat-preview"
       data-noprint
       onClose={(event) => {
-        if (!event.currentTarget.open) onClose();
+        if (event.currentTarget.open) return;
+        dictation.cancel();
+        onClose();
       }}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -84,9 +135,15 @@ export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; on
         event.stopPropagation();
         if (event.nativeEvent.isComposing) return;
         event.preventDefault();
-        onClose();
+        if (dictating) dictation.cancel();
+        else onClose();
       }}
-      className="anim-inspector fixed inset-x-0 top-auto bottom-[var(--chat-sheet-bottom,0px)] z-[45] m-0 h-[min(38rem,calc(var(--chat-sheet-height,100dvh)-0.75rem))] max-h-none w-screen max-w-none overflow-hidden rounded-t-lg border border-rule-2 bg-paper p-0 text-ink shadow-[var(--shadow-pop)] backdrop:bg-ink/35 md:inset-x-auto md:right-5 md:bottom-5 md:h-[min(37rem,calc(100dvh-2.5rem))] md:w-[28rem] md:rounded-lg"
+      className={cx(
+        "anim-chat fixed inset-x-0 top-auto bottom-[var(--chat-sheet-bottom,0px)] z-[45] m-0 h-[min(38rem,calc(var(--chat-sheet-height,100dvh)-0.75rem))] max-h-none w-screen max-w-none overflow-hidden rounded-t-lg border border-rule-2 bg-paper p-0 text-ink shadow-[var(--shadow-pop)] backdrop:bg-ink/35",
+        // From md the chat floats just above the launcher (1rem from the corner, 3rem tall, then a 0.75rem gap).
+        "md:inset-x-auto md:right-4 md:bottom-19 md:h-[min(37rem,calc(100dvh-5.75rem))] md:w-[28rem] md:rounded-lg",
+        dockClassName,
+      )}
     >
       <div className="flex h-full min-h-0 flex-col">
         <header className="flex shrink-0 items-center gap-2.5 border-b border-rule px-4 py-1.5 md:px-5">
@@ -100,6 +157,8 @@ export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; on
             disabled={busy || (messages.length === 0 && !draft)}
             onClick={() => {
               clearError();
+              dictation.clearError();
+              setLastClip(null);
               setMessages([]);
               setDraft("");
               inputRef.current?.focus({ preventScroll: true });
@@ -153,7 +212,40 @@ export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; on
         </div>
 
         <div className="shrink-0 border-t border-rule bg-paper px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-5">
-          <form onSubmit={submit} className="flex items-end gap-2 rounded-md border border-rule-2 bg-paper-2 p-1.5 focus-within:border-pen">
+          <p role="status" className="sr-only">{dictationStatus[dictation.state]}</p>
+          {dictating && (
+            <div className="mb-2 flex items-center gap-2 text-sm">
+              {recording && <span aria-hidden className="size-2 shrink-0 rounded-full bg-pen" />}
+              <span aria-hidden className="font-semibold text-pen">{dictationStatus[dictation.state]}</span>
+              {recording && (
+                <span aria-hidden className="num text-ink-2">
+                  {clock(dictation.seconds)} / {clock(TRANSCRIPTION_MAX_SECONDS)}
+                </span>
+              )}
+              <button type="button" className="btn btn-ghost ml-auto h-11 text-ink-2 md:h-8" title="Discard recording (Esc)" onClick={dictation.cancel}>
+                Cancel
+              </button>
+            </div>
+          )}
+          {dictation.error && (
+            <p role="alert" className="mb-2 text-sm text-ink-2">{dictationMessage(dictation.error)}</p>
+          )}
+          {!dictating && !dictation.error && lastClip && (lastClip.cost || lastClip.estimatedCost) && (
+            <p className="mb-2 text-xs text-ink-3">
+              {lastClip.cost && (
+                <>
+                  Last clip cost <span className="num text-ink-2">{formatUsd(lastClip.cost.amount)}</span> to transcribe with {clipModelName}.
+                </>
+              )}
+              {!lastClip.cost && lastClip.estimatedCost && (
+                <>
+                  Last clip cost about <span className="num text-ink-2">{formatUsd(lastClip.estimatedCost.amount)}</span> with {clipModelName} at list price
+                  {clipModel?.freePlan ? `, or free on ${clipModel.provider}’s free plan.` : "."}
+                </>
+              )}
+            </p>
+          )}
+          <form onSubmit={submit} className={cx("flex items-end gap-2 rounded-md border border-rule-2 bg-paper-2 p-1.5 focus-within:border-pen", dictating && "border-pen")}>
             <textarea
               ref={inputRef}
               aria-label="Your message"
@@ -169,11 +261,44 @@ export function ChatPanel({ id, open, onClose }: { id: string; open: boolean; on
               }}
               className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-lg leading-snug outline-none placeholder:text-ink-3 focus-visible:outline-none md:text-base"
             />
+            <button
+              type="button"
+              className={cx(
+                "btn btn-icon size-11 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 md:size-9",
+                recording ? "border-pen bg-pen-wash text-pen hover:bg-pen-wash-2" : "btn-ghost text-ink-2",
+              )}
+              aria-label={dictationLabels[dictation.state]}
+              title={dictationLabels[dictation.state]}
+              aria-disabled={(dictating && !recording) || undefined}
+              onClick={() => {
+                if (dictation.state === "idle") {
+                  setLastClip(null);
+                  void dictation.start(prefs.transcriptionModel);
+                } else if (recording) dictation.stop();
+              }}
+            >
+              {recording ? <Square size={14} fill="currentColor" aria-hidden /> : <Mic size={18} aria-hidden />}
+            </button>
             <button type="submit" className="btn btn-primary btn-icon size-11 md:size-9" aria-label="Send message" title="Send message" disabled={!draft.trim() || busy}>
               <ArrowUp size={18} aria-hidden />
             </button>
           </form>
-          <p id="chat-preview" className="mt-2 text-xs text-ink-3">Sample replies only. Messages stay in this tab.</p>
+          <p id="chat-preview" className="mt-2 text-xs text-ink-3">
+            Sample replies only. Messages stay in this tab.{" "}
+            {voiceModel
+              ? `Voice input goes to ${voiceModel.provider} ${voiceModel.name}, about ${formatUsd(voiceModel.usdPerMinute)} a minute.`
+              : "Voice input goes to the transcription model chosen in Settings."}{" "}
+            <Link
+              href="/settings#voice"
+              className="font-medium text-pen hover:underline"
+              onClick={() => {
+                // On phones the chat covers the page, so get out of the way.
+                if (window.matchMedia(MOBILE_QUERY).matches) onClose();
+              }}
+            >
+              Change model
+            </Link>
+          </p>
         </div>
       </div>
     </dialog>
