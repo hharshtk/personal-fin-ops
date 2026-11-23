@@ -8,12 +8,13 @@ import type {
   Commitment,
   EntityRef,
   ISODate,
+  MonthKey,
   Occurrence,
   PaymentMethod,
   Transaction,
   TxnType,
 } from "../types";
-import { addMonths, daysInMonth, monthOf, parts } from "../format";
+import { addDays, addMonths, daysInMonth, monthOf, parts } from "../format";
 import { AS_OF, CARD_OPENING, CARDS, COMMITMENTS, DATA_START } from "./core";
 
 /* ── seeded PRNG ── */
@@ -274,16 +275,24 @@ add("2026-11-06", "Tanishq · 24K gold coin, 3 g (Dhanteras)", -38520, "investme
 
 export interface Statement {
   cardId: string;
+  periodStart: ISODate;
   date: ISODate;
   due: ISODate;
   amount: number;
-  paidOn?: ISODate;
+  minimumDue?: number;
 }
 
 export const STATEMENTS: Statement[] = [];
 
+// Sample issuer-reported amounts for the latest statements.
+const STATEMENT_MINIMUMS: Record<string, Record<ISODate, number>> = {
+  "hdfc-cc": { "2026-11-10": 2480 },
+  "icici-cc": { "2026-11-01": 730 },
+};
+
 for (const card of CARDS) {
   const cardTxns = drafts.filter((t) => t.accountId === card.id);
+  const commitmentId = COMMITMENTS.find((c) => c.link?.kind === "card" && c.link.id === card.id)!.id;
   let prev: ISODate = "2026-04-30";
   let first = true;
   for (let i = 0; i < 8; i++) {
@@ -294,12 +303,19 @@ for (const card of CARDS) {
     const due = addMonths(stmtDate, card.dueDay > card.statementDay ? 0 : 1, card.dueDay);
     const payOn = card.autopayFrom ? due : addMonths(due, 0, parts(due).d - 2);
     const payFrom = card.autopayFrom ?? "hdfc-sb";
-    const stmt: Statement = { cardId: card.id, date: stmtDate, due, amount };
+    const stmt: Statement = {
+      cardId: card.id,
+      periodStart: addDays(prev, 1),
+      date: stmtDate,
+      due,
+      amount,
+      minimumDue: STATEMENT_MINIMUMS[card.id]?.[stmtDate],
+    };
     if (payOn <= AS_OF) {
-      stmt.paidOn = payOn;
       add(payOn, `${card.name} bill payment`, -amount, "card_payment", "card-payment", payFrom, card.autopayFrom ? "Auto-debit" : "Netbanking", {
         counterpartyId: card.id,
-        commitmentId: card.id === "hdfc-cc" ? "c-hdfc-cc" : "c-icici-cc",
+        commitmentId,
+        occurrenceId: `${commitmentId}@${due}`,
       });
     }
     STATEMENTS.push(stmt);
@@ -316,7 +332,8 @@ export const TRANSACTIONS: Transaction[] = drafts.map((t, i) => ({ ...t, id: `t$
 
 /* ───────────── Commitment occurrences (Oct 2026 → Feb 2027) ───────────── */
 
-const CAL_MONTHS = ["2026-10", "2026-11", "2026-12", "2027-01", "2027-02"];
+/** Months the commitment calendar covers. */
+export const CALENDAR_MONTHS: MonthKey[] = ["2026-10", "2026-11", "2026-12", "2027-01", "2027-02"];
 const yearlyDates: Record<string, ISODate> = {
   "c-ins-car": "2026-12-12",
   "c-ins-health": "2027-01-06",
@@ -325,7 +342,7 @@ const yearlyDates: Record<string, ISODate> = {
 
 function commitmentDates(c: Commitment): ISODate[] {
   if (c.cadence === "Yearly") return [yearlyDates[c.id]].filter(Boolean);
-  return CAL_MONTHS.filter((mo) => c.cadence !== "Bi-monthly" || Number(mo.slice(5)) % 2 === 1).map((mo) => d(mo, c.day));
+  return CALENDAR_MONTHS.filter((mo) => c.cadence !== "Bi-monthly" || Number(mo.slice(5)) % 2 === 1).map((mo) => d(mo, c.day));
 }
 
 function estimateFor(c: Commitment, date: ISODate): number {

@@ -4,8 +4,8 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useState } from "react";
 import { Download, PenLine, Plus, SearchX, StickyNote, X } from "lucide-react";
 import type { Transaction } from "@/lib/types";
-import { AS_OF, CATEGORIES, amountFor, getCard, getCategory, ledgerAccountIds, ledgerAccountName, ledgerAccountShort, DATA_START_DATE } from "@/lib/data";
-import { addDays, formatDate, formatMoney } from "@/lib/format";
+import { AS_OF, AS_OF_MONTH, CATEGORIES, amountFor, getCard, getCategory, ledgerAccountIds, ledgerAccountName, ledgerAccountShort, DATA_START_DATE } from "@/lib/data";
+import { addDays, addMonths, formatDate, formatMoney, parts } from "@/lib/format";
 import { useLedger, usePrefs, useUI } from "@/components/workspace/state";
 import { Money } from "@/components/ui/money";
 import { DateMark, EmptyState, PageHeader, Tag } from "@/components/ui/primitives";
@@ -17,7 +17,7 @@ const PERIODS = [
   { id: "last-month", label: "Last month" },
   { id: "90d", label: "Last 90 days" },
   { id: "fy", label: "FY to date" },
-  { id: "all", label: "All (since May)" },
+  { id: "all", label: `All (since ${formatDate(DATA_START_DATE, "MMM")})` },
   { id: "custom", label: "Custom range" },
 ] as const;
 
@@ -29,20 +29,24 @@ const TYPES = [
   { id: "transfers", label: "Transfers & card bills" },
 ] as const;
 
+const MONTH_START = `${AS_OF_MONTH}-01`;
+/** Financial-year-to-date filters start in April. */
+const FY_START = `${parts(AS_OF).m >= 4 ? parts(AS_OF).y : parts(AS_OF).y - 1}-04-01`;
+
 function periodRange(period: string, from?: string | null, to?: string | null): [string, string] {
   switch (period) {
     case "last-month":
-      return ["2026-10-01", "2026-10-31"];
+      return [addMonths(MONTH_START, -1), addDays(MONTH_START, -1)];
     case "90d":
       return [addDays(AS_OF, -89), AS_OF];
     case "fy":
-      return ["2026-04-01", AS_OF];
+      return [FY_START, AS_OF];
     case "all":
       return [DATA_START_DATE, AS_OF];
     case "custom":
       return [from || DATA_START_DATE, to || AS_OF];
     default:
-      return ["2026-11-01", AS_OF];
+      return [MONTH_START, AS_OF];
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, X } from "lucide-react";
 import { useUI } from "@/components/workspace/state";
@@ -18,6 +18,10 @@ import {
   TransactionInspector,
 } from "./panels";
 import { TransactionForm } from "./TransactionForm";
+import { EquityActivityForm } from "@/components/employee-equity/EquityActivityForm";
+import { EquityInputsInspector } from "@/components/employee-equity/EquityInputsInspector";
+import { EquityPlanForm } from "@/components/employee-equity/EquityPlanForm";
+import { EquityPlanInspector } from "@/components/employee-equity/EquityPlanInspector";
 
 const KIND_LABEL: Record<string, string> = {
   account: "Account",
@@ -32,12 +36,19 @@ const KIND_LABEL: Record<string, string> = {
   category: "Category",
   "new-transaction": "New transaction",
   "edit-transaction": "Edit transaction",
+  "equity-plan": "Employee equity plan",
+  "new-equity-plan": "Add employee equity plan",
+  "edit-equity-plan": "Edit employee equity plan",
+  "equity-activity": "Employee equity activity",
+  "equity-inputs": "Prices & FX",
 };
 
-export function Inspector() {
+export function Inspector({ modal }: { modal: boolean }) {
   const { inspector, closeInspector, inspectorBack, canGoBack } = useUI();
   const pathname = usePathname();
-  const panelRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const equityOpener = useRef<HTMLElement>(null);
+  const lastWorkspaceFocus = useRef<HTMLElement>(null);
   const lastPath = useRef(pathname);
 
   // Close when the user moves to another workspace
@@ -59,11 +70,50 @@ export function Inspector() {
     return () => window.removeEventListener("keydown", onKey);
   }, [inspector, closeInspector]);
 
-  // Move focus into the panel when it opens or changes subject
-  const key = inspector ? `${inspector.kind}:${inspector.id}` : "";
   useEffect(() => {
+    const rememberFocus = (event: FocusEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && !panelRef.current?.contains(target) && !target.closest("[data-palette], dialog")) {
+        lastWorkspaceFocus.current = target;
+      }
+    };
+    document.addEventListener("focusin", rememberFocus);
+    return () => document.removeEventListener("focusin", rememberFocus);
+  }, []);
+
+  // Move focus into the panel when it opens or changes subject
+  const isEquity = inspector?.kind.includes("equity") ?? false;
+  const key = inspector ? `${inspector.kind}:${inspector.id}${inspector.kind === "equity-activity" ? `:${inspector.action}:${inspector.recordId ?? "new"}` : ""}` : "";
+  useEffect(() => {
+    if (isEquity) {
+      const active = document.activeElement;
+      if (!equityOpener.current) {
+        equityOpener.current = active instanceof HTMLElement && active !== document.body && !panelRef.current?.contains(active)
+          ? active
+          : lastWorkspaceFocus.current;
+      }
+    } else if (equityOpener.current) {
+      if (!key) equityOpener.current.focus({ preventScroll: true });
+      equityOpener.current = null;
+    }
     if (key) panelRef.current?.focus({ preventScroll: true });
-  }, [key]);
+  }, [key, isEquity, modal]);
+
+  function containEquityFocus(event: ReactKeyboardEvent<HTMLElement>) {
+    const panel = event.currentTarget;
+    if (!modal || event.key !== "Tab") return;
+    const focusable = [...panel.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex='0']")]
+      .filter((element) => !element.matches(":disabled") && element.getClientRects().length);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && (event.target === first || event.target === panel)) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && event.target === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
 
   if (!inspector) return null;
 
@@ -105,6 +155,21 @@ export function Inspector() {
     case "edit-transaction":
       body = <TransactionForm key={`edit-${inspector.id}`} editId={inspector.id} />;
       break;
+    case "equity-plan":
+      body = <EquityPlanInspector id={inspector.id} />;
+      break;
+    case "new-equity-plan":
+      body = <EquityPlanForm initialKind={inspector.id} />;
+      break;
+    case "edit-equity-plan":
+      body = <EquityPlanForm id={inspector.id} />;
+      break;
+    case "equity-activity":
+      body = <EquityActivityForm id={inspector.id} action={inspector.action} recordId={inspector.recordId} />;
+      break;
+    case "equity-inputs":
+      body = <EquityInputsInspector id={inspector.id} />;
+      break;
     default:
       body = null;
   }
@@ -112,11 +177,18 @@ export function Inspector() {
   return (
     <>
       {/* Scrim on narrower screens, where the inspector overlays the workspace */}
-      <button type="button" aria-label="Close panel" tabIndex={-1} className="anim-fade fixed inset-0 z-30 bg-ink/25 xl:hidden" onClick={closeInspector} />
+      {modal ? (
+        <div aria-hidden="true" className="anim-fade fixed inset-0 z-30 bg-ink/25 xl:hidden" onClick={closeInspector} />
+      ) : (
+        <button type="button" aria-label="Close panel" tabIndex={-1} className="anim-fade fixed inset-0 z-30 bg-ink/25 xl:hidden" onClick={closeInspector} />
+      )}
       <aside
         ref={panelRef}
         tabIndex={-1}
         aria-label={KIND_LABEL[inspector.kind] ?? "Details"}
+        role={modal ? "dialog" : undefined}
+        aria-modal={modal || undefined}
+        onKeyDown={containEquityFocus}
         className={cx(
           "anim-inspector fixed inset-y-0 right-0 z-40 flex w-full max-w-[440px] flex-col border-l border-rule-2 bg-paper shadow-[var(--shadow-pop)] outline-none",
           "xl:sticky xl:top-12 xl:z-10 xl:h-[calc(100dvh-48px)] xl:w-[400px] xl:shrink-0 xl:shadow-none",
@@ -136,7 +208,7 @@ export function Inspector() {
             <X size={16} aria-hidden />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
+        <div key={isEquity ? key : undefined} className="min-h-0 flex-1 overflow-y-auto">{body}</div>
       </aside>
     </>
   );

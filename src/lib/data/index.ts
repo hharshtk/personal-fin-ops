@@ -13,10 +13,11 @@ import type {
   MonthFlow,
   MonthKey,
   NetWorthSnapshot,
+  Occurrence,
   ScheduleRow,
   Transaction,
 } from "../types";
-import { diffDays, formatDate, monthOf } from "../format";
+import { addMonths, daysInMonth, diffDays, formatDate, monthOf, parts } from "../format";
 import {
   AS_OF,
   ASSETS,
@@ -34,9 +35,15 @@ import {
   PROFILE,
   SIPS,
 } from "./core";
-import { OCCURRENCES, STATEMENTS, TRANSACTIONS } from "./ledger";
+import { CALENDAR_MONTHS, OCCURRENCES, STATEMENTS, TRANSACTIONS } from "./ledger";
+import { CARD_REWARDS } from "./card-rewards";
+import { EQUITY_MARKET_INPUTS, EQUITY_PLANS } from "./employee-equity";
 
 export {
+  CALENDAR_MONTHS,
+  CARD_REWARDS,
+  EQUITY_MARKET_INPUTS,
+  EQUITY_PLANS,
   AS_OF,
   ASSETS,
   CARDS,
@@ -55,6 +62,22 @@ export {
 };
 
 export const DATA_START_DATE = DATA_START;
+
+/** The month containing AS_OF. Screens derive "this month" from it, never from a literal. */
+export const AS_OF_MONTH: MonthKey = monthOf(AS_OF);
+
+/** Days after AS_OF until the month ends. */
+export const DAYS_LEFT_IN_MONTH = daysInMonth(parts(AS_OF).y, parts(AS_OF).m) - parts(AS_OF).d;
+
+/** Every month from `from` to `to`, inclusive. */
+export function monthRange(from: MonthKey, to: MonthKey): MonthKey[] {
+  const out: MonthKey[] = [];
+  for (let m = from; m <= to; m = monthOf(addMonths(`${m}-01`, 1))) out.push(m);
+  return out;
+}
+
+/** Months covered by the transaction ledger, oldest first. */
+const LEDGER_MONTHS = monthRange(monthOf(DATA_START), AS_OF_MONTH);
 
 const byId = <T extends { id: string }>(list: T[]) => new Map(list.map((x) => [x.id, x]));
 const accountMap = byId(CASH_ACCOUNTS);
@@ -162,18 +185,47 @@ export function accountBalance(accountId: string, txns: Transaction[] = TRANSACT
 
 /* ───────────── Cards ───────────── */
 
+function getCardCommitment(cardId: string) {
+  return COMMITMENTS.find((c) => c.kind === "card" && c.link?.id === cardId);
+}
+
+export function cardBillPayments(id: string, cardId: string, txns: Transaction[]) {
+  return txns.filter((t) =>
+    t.occurrenceId === id && t.counterpartyId === cardId && t.status === "cleared" &&
+    (t.type === "card_payment" || t.type === "transfer") && t.amount < 0,
+  );
+}
+
+export function remainingBillAmount(occurrence: Occurrence, txns: Transaction[]): number {
+  const commitment = commitmentMap.get(occurrence.commitmentId);
+  if (commitment?.kind !== "card" || !commitment.link) return occurrence.amount;
+  const paid = cardBillPayments(occurrence.id, commitment.link.id, txns).reduce((sum, t) => sum - t.amount, 0);
+  return Math.max(0, Math.round((occurrence.amount - paid) * 100) / 100);
+}
+
 export function cardStatus(cardId: string, txns: Transaction[] = TRANSACTIONS) {
   const card = cardMap.get(cardId)!;
+  const commitment = getCardCommitment(cardId);
   const rows = accountLedger(cardId, txns);
-  const outstanding = -(rows[0]?.balance ?? -CARD_OPENING[cardId]);
-  const statements = STATEMENTS.filter((s) => s.cardId === cardId);
+  const outstanding = Math.round(-(rows[0]?.balance ?? -CARD_OPENING[cardId]) * 100) / 100;
+  const statements = STATEMENTS.filter((s) => s.cardId === cardId).map((s) => {
+    const payments = cardBillPayments(`${commitment?.id}@${s.due}`, cardId, txns);
+    const paid = Math.round(payments.reduce((sum, t) => sum - t.amount, 0) * 100) / 100;
+    const remaining = Math.max(0, Math.round((s.amount - paid) * 100) / 100);
+    const minimumRemaining = s.minimumDue === undefined ? undefined : Math.min(remaining, Math.max(0, Math.round((s.minimumDue - paid) * 100) / 100));
+    const paidOn = remaining === 0 ? payments.reduce<ISODate | undefined>((latest, t) => !latest || t.date > latest ? t.date : latest, undefined) : undefined;
+    return { ...s, paidOn, paid, remaining, minimumRemaining, payments };
+  });
   const last = statements[statements.length - 1];
-  const unpaid = last && !last.paidOn ? last.amount : 0;
-  const unbilled = Math.max(0, outstanding - unpaid);
+  const unpaid = statements.reduce((sum, s) => sum + s.remaining, 0);
+  const unbilled = Math.max(0, Math.round((outstanding - unpaid) * 100) / 100);
+  const nextStatement = addMonths(AS_OF, Number(AS_OF.slice(8)) >= card.statementDay ? 1 : 0, card.statementDay);
   return {
     card,
+    commitment,
     outstanding,
     lastStatement: last,
+    nextStatement,
     statementDue: unpaid,
     unbilled,
     available: card.limit - outstanding,
@@ -333,7 +385,7 @@ export function flowForMonth(month: MonthKey, txns: Transaction[] = TRANSACTIONS
 }
 
 export function monthFlows(txns: Transaction[] = TRANSACTIONS): MonthFlow[] {
-  const recent = ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"].map((m) => flowForMonth(m, txns));
+  const recent = LEDGER_MONTHS.map((m) => flowForMonth(m, txns));
   return [...PAST_FLOWS, ...recent];
 }
 
@@ -363,7 +415,7 @@ export function budgetFor(month: MonthKey, txns: Transaction[] = TRANSACTIONS): 
   });
 }
 
-export const BUDGET_MONTHS: MonthKey[] = ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"];
+export const BUDGET_MONTHS: MonthKey[] = LEDGER_MONTHS;
 
 /* ───────────── Commitments ───────────── */
 
@@ -390,12 +442,13 @@ export function attentionItems(txns: Transaction[] = TRANSACTIONS, paidIds: Set<
   for (const o of OCCURRENCES) {
     if (paidIds.has(o.id)) continue;
     const c = commitmentMap.get(o.commitmentId)!;
+    const amount = c.kind === "card" ? remainingBillAmount(o, txns) : o.amount;
     if (o.status === "overdue") {
       items.push({
         id: `att-${o.id}`,
         severity: "critical",
         title: `${c.name} overdue`,
-        detail: `${formatAmount(o.amount)} was due ${formatDate(o.date, "d MMM")}. Pay from ${ledgerAccountShort(c.payFromId)} to avoid a late fee.`,
+        detail: `${formatAmount(amount)} was due ${formatDate(o.date, "d MMM")}. Pay from ${ledgerAccountShort(c.payFromId)} to avoid a late fee.`,
         date: o.date,
         ref: { kind: "commitment", id: o.id },
         action: "Mark as paid",
@@ -405,14 +458,14 @@ export function attentionItems(txns: Transaction[] = TRANSACTIONS, paidIds: Set<
         id: `att-${o.id}`,
         severity: "warning",
         title: `${c.name} due ${formatDate(o.date, "d MMM")}`,
-        detail: `${formatAmount(o.amount)} in ${diffDays(o.date, AS_OF)} days. Autopay is off.`,
+        detail: `${formatAmount(amount)} in ${diffDays(o.date, AS_OF)} days. Autopay is off.`,
         date: o.date,
         ref: c.kind === "card" ? (c.link as EntityRef) : { kind: "commitment", id: o.id },
         action: "Review bill",
       });
     }
   }
-  const overspent = budgetFor(monthOf(AS_OF), txns)
+  const overspent = budgetFor(AS_OF_MONTH, txns)
     .filter((b) => b.ratio > 1)
     .sort((a, b) => b.ratio - a.ratio)
     .slice(0, 2);
@@ -422,7 +475,7 @@ export function attentionItems(txns: Transaction[] = TRANSACTIONS, paidIds: Set<
         id: `att-budget-${b.category.id}`,
         severity: "warning",
         title: `${b.category.name} at ${Math.round(b.ratio * 100)}% of budget`,
-        detail: `${formatAmount(b.actual)} spent of ${formatAmount(b.budget)}, with 8 days of the month left.`,
+        detail: `${formatAmount(b.actual)} spent of ${formatAmount(b.budget)}, with ${DAYS_LEFT_IN_MONTH} days of the month left.`,
         ref: { kind: "category", id: b.category.id },
         action: "See transactions",
       });
@@ -502,7 +555,7 @@ export function entityHref(ref: EntityRef): string {
     case "account":
       return `/accounts/${ref.id}`;
     case "card":
-      return `/liabilities/${ref.id}`;
+      return `/credit-cards/${ref.id}`;
     case "loan":
       return `/liabilities/${ref.id}`;
     case "holding":

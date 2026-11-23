@@ -2,8 +2,10 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { NumberSystem } from "@/lib/format";
-import type { EntityRef, Transaction } from "@/lib/types";
-import { TRANSACTIONS } from "@/lib/data";
+import type { EntityRef, EquityActivity, EquityMarketInput, EquityPlan, EquityPlanKind, Transaction } from "@/lib/types";
+import { EQUITY_MARKET_INPUTS, EQUITY_PLANS, TRANSACTIONS } from "@/lib/data";
+import { upsertEquityInput, upsertEquityPlan } from "@/lib/employee-equity";
+import { paidOccurrenceIds } from "@/lib/payments";
 
 /* ───────────── Preferences (session only) ───────────── */
 
@@ -52,12 +54,32 @@ interface LedgerCtx {
 }
 const LedgerContext = createContext<LedgerCtx | null>(null);
 
+interface EquitySession {
+  plans: EquityPlan[];
+  inputs: EquityMarketInput[];
+  changes: number;
+}
+
+interface EquityCtx extends EquitySession {
+  savePlan: (plan: EquityPlan) => void;
+  saveInput: (input: EquityMarketInput) => void;
+  resetEquity: () => void;
+}
+
+const BASE_EQUITY: EquitySession = { plans: EQUITY_PLANS, inputs: EQUITY_MARKET_INPUTS, changes: 0 };
+const EquityContext = createContext<EquityCtx | null>(null);
+
 /* ───────────── UI (inspector, palette, toasts) ───────────── */
 
 export type InspectTarget =
   | EntityRef
   | { kind: "new-transaction"; id: string; preset?: Partial<Transaction> }
-  | { kind: "edit-transaction"; id: string };
+  | { kind: "edit-transaction"; id: string }
+  | { kind: "equity-plan"; id: string }
+  | { kind: "new-equity-plan"; id: EquityPlanKind }
+  | { kind: "edit-equity-plan"; id: string }
+  | { kind: "equity-activity"; id: string; action: EquityActivity["kind"]; recordId?: string }
+  | { kind: "equity-inputs"; id: string };
 
 export interface Toast {
   id: number;
@@ -89,6 +111,22 @@ let toastSeq = 0;
 let manualSeq = 0;
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const [equitySession, setEquitySession] = useState(BASE_EQUITY);
+  const equity = useMemo<EquityCtx>(() => ({
+    ...equitySession,
+    savePlan: (plan) => setEquitySession((session) => ({
+      ...session,
+      plans: upsertEquityPlan(session.plans, plan),
+      changes: session.changes + 1,
+    })),
+    saveInput: (input) => setEquitySession((session) => ({
+      ...session,
+      inputs: upsertEquityInput(session.inputs, input),
+      changes: session.changes + 1,
+    })),
+    resetEquity: () => setEquitySession(BASE_EQUITY),
+  }), [equitySession]);
+
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const setPref = useCallback(<K extends keyof Prefs>(key: K, value: Prefs[K]) => {
     setPrefs((p) => ({ ...p, [key]: value }));
@@ -98,13 +136,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [added, setAdded] = useState<Transaction[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Transaction>>>({});
   const [deleted, setDeleted] = useState<Set<string>>(() => new Set());
-  const [paidOccurrences, setPaid] = useState<Set<string>>(() => new Set());
+  const [markedPaid, setPaid] = useState<Set<string>>(() => new Set());
 
   const txns = useMemo(() => {
     const base = TRANSACTIONS.filter((t) => !deleted.has(t.id)).map((t) => (edits[t.id] ? { ...t, ...edits[t.id] } : t));
     const extra = added.filter((t) => !deleted.has(t.id)).map((t) => (edits[t.id] ? { ...t, ...edits[t.id] } : t));
     return [...base, ...extra].sort((a, b) => (a.date === b.date ? (a.id < b.id ? 1 : -1) : a.date < b.date ? 1 : -1));
   }, [added, edits, deleted]);
+
+  const paidOccurrences = useMemo(() => paidOccurrenceIds(markedPaid, txns), [markedPaid, txns]);
 
   const ledger = useMemo<LedgerCtx>(
     () => ({
@@ -131,7 +171,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           n.delete(id);
           return n;
         }),
-      sessionChanges: added.length + Object.keys(edits).length + deleted.size + paidOccurrences.size,
+      sessionChanges: added.length + Object.keys(edits).length + deleted.size + markedPaid.size,
       resetSession: () => {
         setAdded([]);
         setEdits({});
@@ -139,7 +179,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setPaid(new Set());
       },
     }),
-    [txns, paidOccurrences, added.length, edits, deleted.size],
+    [txns, paidOccurrences, added.length, edits, deleted.size, markedPaid.size],
   );
 
   const [stack, setStack] = useState<InspectTarget[]>([]);
@@ -185,7 +225,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   return (
     <PrefsContext.Provider value={prefsValue}>
       <LedgerContext.Provider value={ledger}>
-        <UIContext.Provider value={ui}>{children}</UIContext.Provider>
+        <EquityContext.Provider value={equity}>
+          <UIContext.Provider value={ui}>{children}</UIContext.Provider>
+        </EquityContext.Provider>
       </LedgerContext.Provider>
     </PrefsContext.Provider>
   );
@@ -199,6 +241,11 @@ export function usePrefs() {
 export function useLedger() {
   const ctx = useContext(LedgerContext);
   if (!ctx) throw new Error("useLedger outside WorkspaceProvider");
+  return ctx;
+}
+export function useEmployeeEquity() {
+  const ctx = useContext(EquityContext);
+  if (!ctx) throw new Error("useEmployeeEquity outside WorkspaceProvider");
   return ctx;
 }
 export function useUI() {

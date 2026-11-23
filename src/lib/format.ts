@@ -155,10 +155,10 @@ export function parts(iso: ISODate) {
   return { y, m, d };
 }
 
-/** "22 Nov", "22 Nov 2026", "Nov 2026", "Sun, 22 Nov" */
+/** "22 Nov", "22 Nov 2026", "Nov 2026", "November", "Sun, 22 Nov" */
 export function formatDate(
   iso: ISODate,
-  style: "d MMM" | "d MMM yyyy" | "MMM yyyy" | "MMMM yyyy" | "EEE, d MMM" | "MMM" | "MMM yy" = "d MMM yyyy",
+  style: "d MMM" | "d MMM yyyy" | "MMM yyyy" | "MMMM yyyy" | "EEE, d MMM" | "MMM" | "MMMM" | "MMM yy" = "d MMM yyyy",
 ): string {
   const { y, m, d } = parts(iso);
   const mon = MONTHS[m - 1];
@@ -173,6 +173,8 @@ export function formatDate(
       return `${MONTHS_LONG[m - 1]} ${y}`;
     case "MMM":
       return mon;
+    case "MMMM":
+      return MONTHS_LONG[m - 1];
     case "MMM yy":
       return `${mon} ’${String(y).slice(2)}`;
     case "EEE, d MMM":
@@ -180,8 +182,13 @@ export function formatDate(
   }
 }
 
-export function formatMonth(key: MonthKey, style: "MMM" | "MMM yy" | "MMMM yyyy" | "MMM yyyy" = "MMM yyyy") {
+export function formatMonth(key: MonthKey, style: "MMM" | "MMMM" | "MMM yy" | "MMMM yyyy" | "MMM yyyy" = "MMM yyyy") {
   return formatDate(`${key}-01`, style);
+}
+
+/** "June to November 2026", or "December 2025 to May 2026" across a year end. */
+export function monthSpanLabel(from: MonthKey, to: MonthKey): string {
+  return `${formatMonth(from, from.slice(0, 4) === to.slice(0, 4) ? "MMMM" : "MMMM yyyy")} to ${formatMonth(to, "MMMM yyyy")}`;
 }
 
 /** Indian financial year label: FY 2026–27 for any date between Apr 2026 and Mar 2027 */

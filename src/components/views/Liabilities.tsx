@@ -8,18 +8,20 @@ import {
   CARDS,
   LOANS,
   OCCURRENCES,
-  accountLedger,
   cardStatus,
+  entityHref,
   getAsset,
   getCommitment,
   ledgerAccountShort,
   loanSchedule,
   loanStatus,
   netWorthNow,
+  remainingBillAmount,
 } from "@/lib/data";
 import { diffDays, durationLabel, formatDate, relativeDays } from "@/lib/format";
 import { useLedger, useUI } from "@/components/workspace/state";
-import { effectiveStatus, usePayOccurrence } from "@/components/workspace/actions";
+import { usePayOccurrence } from "@/components/workspace/actions";
+import { effectiveStatus } from "@/lib/payments";
 import { Money, Pct } from "@/components/ui/money";
 import { BudgetMeter, DateMark, Facts, Metric, MetricStrip, OccurrenceTag, PageHeader, Progress, Section, Tag } from "@/components/ui/primitives";
 import { SegmentBar } from "@/components/charts/SegmentBar";
@@ -28,7 +30,6 @@ import { TableWrap } from "@/components/ui/table";
 import { cx } from "@/components/ui/cx";
 
 const TAKE_HOME = 246800;
-const cardCommitment = (cardId: string) => (cardId === "hdfc-cc" ? "c-hdfc-cc" : "c-icici-cc");
 
 export function LiabilitiesView() {
   const { txns, paidOccurrences } = useLedger();
@@ -51,7 +52,7 @@ export function LiabilitiesView() {
       <MetricStrip className="mt-4">
         <Metric label="Total owed" value={<Money value={nw.liabilities} compact="pref" />} sub={`${LOANS.length} loans and ${CARDS.length} cards`} size="lg" />
         <Metric label="EMIs each month" value={<Money value={emis} />} sub={<><Pct value={(emis / TAKE_HOME) * 100} decimals={0} /> of take-home pay</>} />
-        <Metric label="Owed on cards" value={<Money value={dues} />} sub="Regalia bill due 28 Nov" />
+        <Metric label="Owed on cards" value={<Money value={dues} />} href="/credit-cards" sub="Open credit cards" />
         <Metric label="Debt to assets" value={<Pct value={(nw.liabilities / nw.assets) * 100} decimals={0} />} sub="Liabilities as a share of assets" />
       </MetricStrip>
 
@@ -123,7 +124,7 @@ export function LiabilitiesView() {
         </TableWrap>
       </Section>
 
-      <Section title="Credit cards" className="mt-2">
+      <Section title="Credit cards" className="mt-2" actions={<Link href="/credit-cards" className="btn btn-sm">Credit card dashboard <ChevronRight size={14} aria-hidden /></Link>}>
         <TableWrap>
           <table className="tbl min-w-[900px]">
             <thead>
@@ -131,7 +132,7 @@ export function LiabilitiesView() {
                 <th>Card</th>
                 <th className="r w-[120px]">Limit</th>
                 <th className="r w-[130px]">Outstanding</th>
-                <th className="r w-[130px]">Statement</th>
+                <th className="r w-[130px]">Statement remaining</th>
                 <th className="w-[140px]">Due</th>
                 <th className="w-[170px]">Utilisation</th>
                 <th className="w-[44px]">
@@ -141,7 +142,7 @@ export function LiabilitiesView() {
             </thead>
             <tbody>
               {cards.map((s) => {
-                const occ = OCCURRENCES.find((o) => o.commitmentId === cardCommitment(s.card.id) && o.date === s.lastStatement?.due);
+                const occ = OCCURRENCES.find((o) => o.commitmentId === s.commitment?.id && o.date === s.lastStatement?.due);
                 const eff = occ ? effectiveStatus(occ, paidOccurrences) : undefined;
                 return (
                   <tr key={s.card.id} data-clickable="true" aria-selected={selected === s.card.id} onClick={() => inspect({ kind: "card", id: s.card.id })}>
@@ -160,7 +161,7 @@ export function LiabilitiesView() {
                       <Money value={s.outstanding} />
                     </td>
                     <td className="r num">
-                      <Money value={s.lastStatement?.amount ?? 0} className={cx(eff?.status === "paid" && "struck")} />
+                      <Money value={s.statementDue} />
                     </td>
                     <td>
                       <div className="flex items-center gap-2">
@@ -175,7 +176,7 @@ export function LiabilitiesView() {
                       </div>
                     </td>
                     <td className="r">
-                      <Link href={`/liabilities/${s.card.id}`} onClick={(e) => e.stopPropagation()} className="btn btn-ghost btn-sm btn-icon" aria-label={`Open ${s.card.name}`}>
+                      <Link href={entityHref({ kind: "card", id: s.card.id })} onClick={(e) => e.stopPropagation()} className="btn btn-ghost btn-sm btn-icon" aria-label={`Open ${s.card.name}`}>
                         <ChevronRight size={16} aria-hidden />
                       </Link>
                     </td>
@@ -201,7 +202,7 @@ export function LiabilitiesView() {
                   <span className="ml-2 text-xs text-ink-3">from {ledgerAccountShort(c.payFromId)}</span>
                 </button>
                 <span className="hidden text-xs text-ink-3 sm:block">{relativeDays(o.date, AS_OF)}</span>
-                <Money value={o.amount} className={cx("num w-24 text-right text-sm font-semibold", eff.status === "paid" && "struck")} />
+                <Money value={eff.status === "paid" ? o.amount : remainingBillAmount(o, txns)} className={cx("num w-24 text-right text-sm font-semibold", eff.status === "paid" && "struck")} />
                 <span className="w-24 text-right">
                   {eff.status === "due" ? (
                     <button type="button" className="btn btn-sm h-6 px-2" onClick={() => pay(o)}>
@@ -232,6 +233,7 @@ export function LoanDetail({ id }: { id: string }) {
   const nextIdx = rows.findIndex((r) => r.date > AS_OF);
   const visible = full ? rows : rows.slice(Math.max(0, nextIdx - 3), nextIdx + 12);
   const asset = loan.assetId ? getAsset(loan.assetId) : undefined;
+  const thisYear = AS_OF.slice(0, 4);
   const years = new Map<string, { principal: number; interest: number }>();
   rows.forEach((r) => {
     const y = r.date.slice(0, 4);
@@ -267,9 +269,9 @@ export function LoanDetail({ id }: { id: string }) {
             height={150}
             data={[...years.entries()].map(([y, v]) => ({
               label: years.size > 12 ? `’${y.slice(2)}` : y,
-              title: `${y}${y === "2026" ? " (this year)" : y > "2026" ? " (scheduled)" : ""}`,
+              title: `${y}${y === thisYear ? " (this year)" : y > thisYear ? " (scheduled)" : ""}`,
               values: v,
-              highlight: y === "2026",
+              highlight: y === thisYear,
             }))}
             series={[
               { key: "principal", label: "Principal", color: "var(--c1)", stack: "emi" },
@@ -373,104 +375,6 @@ export function LoanDetail({ id }: { id: string }) {
           </ul>
         </Section>
       )}
-    </div>
-  );
-}
-
-/* ───────────── Card detail ───────────── */
-
-export function CardDetail({ id }: { id: string }) {
-  const { txns, paidOccurrences } = useLedger();
-  const { inspect } = useUI();
-  const pay = usePayOccurrence();
-  const s = cardStatus(id, txns);
-  const card = s.card;
-  const last = s.lastStatement;
-  const cycle = accountLedger(id, txns).filter((r) => r.txn.date > (last?.date ?? "0000") && r.txn.accountId === id);
-  const occ = OCCURRENCES.find((o) => o.commitmentId === cardCommitment(id) && o.date === last?.due);
-  const eff = occ ? effectiveStatus(occ, paidOccurrences) : undefined;
-
-  return (
-    <div>
-      <PageHeader
-        title={
-          <span>
-            {card.name} <span className="text-base font-normal text-ink-3">••{card.mask}</span>
-          </span>
-        }
-        meta={`${card.institution} · ${card.network} · statement on the ${card.statementDay}${card.statementDay === 1 ? "st" : "th"}, due on the ${card.dueDay}th`}
-        actions={
-          <>
-            <Link href="/liabilities" className="btn">
-              All loans & cards
-            </Link>
-            <Link href={`/transactions?account=${id}&period=all`} className="btn">
-              Open in ledger
-            </Link>
-          </>
-        }
-      />
-      <MetricStrip className="mt-4">
-        <Metric label="Outstanding" value={<Money value={s.outstanding} />} sub="Statement plus unbilled" size="lg" />
-        <Metric
-          label={`Statement of ${last ? formatDate(last.date, "d MMM") : "—"}`}
-          value={<Money value={last?.amount ?? 0} className={cx(eff?.status === "paid" && "struck")} />}
-          sub={eff ? <span className="inline-flex items-center gap-2">due {formatDate(last!.due, "d MMM")} <OccurrenceTag status={eff.status} paidOn={eff.paidOn} /></span> : undefined}
-        />
-        <Metric label="Unbilled" value={<Money value={s.unbilled} />} sub={`${cycle.length} spends since ${last ? formatDate(last.date, "d MMM") : "—"}`} />
-        <Metric label="Available credit" value={<Money value={s.available} />} sub={<><Pct value={s.utilization * 100} decimals={0} /> of <Money value={card.limit} compact /> used</>} />
-      </MetricStrip>
-      {occ && eff && eff.status !== "paid" && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-rule bg-red-wash/60 px-4 py-3 text-sm md:px-6">
-          <span className="font-semibold text-red">
-            <Money value={last!.amount} /> due {formatDate(last!.due, "EEE, d MMM")} · {relativeDays(last!.due, AS_OF)}
-          </span>
-          <span className="text-ink-2">Autopay is off for this card. Paying the full statement avoids interest of about 3.6% a month.</span>
-          <button type="button" className="btn btn-primary btn-sm ml-auto" onClick={() => pay(occ)}>
-            Mark paid from {ledgerAccountShort(getCommitment(occ.commitmentId)!.payFromId)}
-          </button>
-        </div>
-      )}
-      <div className="grid gap-px border-b border-rule bg-rule lg:grid-cols-12 [&>*]:bg-paper">
-        <Section className="lg:col-span-7" title="Current cycle" meta={`since ${last ? formatDate(last.date, "d MMM") : ""} · billed on ${card.statementDay}${card.statementDay === 1 ? "st" : "th"} Dec`} bodyClassName="pb-3">
-          <ul>
-            {cycle.map((r) => (
-              <li key={r.txn.id}>
-                <button type="button" onClick={() => inspect({ kind: "transaction", id: r.txn.id })} className="flex w-full items-center gap-3 border-t border-rule px-4 py-1.5 text-left first:border-t-0 hover:bg-paper-2 md:px-5">
-                  <DateMark date={r.txn.date} className="w-[52px]" />
-                  <span className="flex-1 truncate text-sm">{r.txn.description}</span>
-                  <Money value={r.amount} tone="flow" className="num text-sm" />
-                </button>
-              </li>
-            ))}
-            {!cycle.length && <li className="px-5 py-4 text-sm text-ink-3">No spends since the last statement.</li>}
-          </ul>
-        </Section>
-        <Section className="lg:col-span-5" title="Statements" bodyClassName="pb-3">
-          <table className="w-full text-sm">
-            <tbody className="num">
-              {[...s.statements].reverse().map((st) => (
-                <tr key={st.date} className="border-t border-rule first:border-t-0">
-                  <td className="py-1.5 pl-4 md:pl-5">{formatDate(st.date, "d MMM yyyy")}</td>
-                  <td className="py-1.5 text-right">
-                    <Money value={st.amount} className={cx(st.paidOn && "text-ink-3")} />
-                  </td>
-                  <td className="py-1.5 pr-4 text-right md:pr-5">
-                    {st.paidOn ? (
-                      <OccurrenceTag status="paid" paidOn={st.paidOn} />
-                    ) : eff?.status === "paid" ? (
-                      <OccurrenceTag status="paid" paidOn={eff.paidOn} />
-                    ) : (
-                      <OccurrenceTag status="due" />
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="px-4 pt-2 text-xs text-ink-3 md:px-5">The first statement includes April spends carried in from before the data window.</p>
-        </Section>
-      </div>
     </div>
   );
 }

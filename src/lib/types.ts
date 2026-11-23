@@ -118,6 +118,69 @@ export interface Sip {
   kind: "SIP" | "RD" | "NPS" | "PPF";
 }
 
+/* ── Employee equity ── */
+
+export type EquityMarket = "indian" | "foreign";
+export type EquityPlanKind = "esop" | "espp";
+
+interface EquityPlanBase {
+  id: string;
+  employer: string;
+  name: string;
+  ticker?: string;
+  exchange?: string;
+  market: EquityMarket;
+  currency: string; // ISO 4217, shared by the plan and its native amounts
+}
+
+export interface VestingTranche {
+  id: string;
+  vestsOn: ISODate;
+  expiresOn: ISODate;
+  options: number;
+}
+
+export interface EquityPurchaseDate {
+  id: string;
+  scheduledOn: ISODate;
+}
+
+interface EquityRecord {
+  id: string;
+  date: ISODate;
+}
+
+export type EquityExercise = EquityRecord & { kind: "exercise"; trancheId: string; options: number; price: number };
+export type EquityContribution = EquityRecord & { kind: "contribution"; amount: number };
+export type EquityPurchase = EquityRecord & { kind: "purchase"; purchaseDateId: string; shares: number; price: number };
+export type EquitySale = EquityRecord & { kind: "sale"; shares: number; price: number };
+export type EquityActivity = EquityExercise | EquityContribution | EquityPurchase | EquitySale;
+
+export interface EsopGrant extends EquityPlanBase {
+  kind: "esop";
+  grantedOn: ISODate;
+  strikePrice: number;
+  tranches: VestingTranche[];
+  activity: (EquityExercise | EquitySale)[];
+}
+
+export interface EsppPeriod extends EquityPlanBase {
+  kind: "espp";
+  startsOn: ISODate;
+  endsOn: ISODate;
+  purchaseDates: EquityPurchaseDate[];
+  activity: (EquityContribution | EquityPurchase | EquitySale)[];
+}
+
+export type EquityPlan = EsopGrant | EsppPeriod;
+
+export interface EquityMarketInput {
+  kind: "price" | "fx";
+  key: string; // security key for a share price, currency code for INR per native unit
+  date: ISODate;
+  value: number;
+}
+
 /* ── Physical assets ── */
 
 export interface PhysicalAsset {
@@ -216,6 +279,7 @@ export interface Transaction {
   counterpartyId?: string; // the other side of a transfer / payment
   method: PaymentMethod;
   commitmentId?: string;
+  occurrenceId?: string; // specific scheduled bill this payment was recorded against
   link?: EntityRef; // loan, holding, policy… this transaction belongs to
   note?: string;
   source: "imported" | "manual";

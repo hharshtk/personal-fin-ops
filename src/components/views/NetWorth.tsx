@@ -5,6 +5,7 @@ import { BarChart3, ChevronDown, ChevronRight, Table2 } from "lucide-react";
 import type { EntityRef } from "@/lib/types";
 import {
   AS_OF,
+  AS_OF_MONTH,
   ASSETS,
   CARDS,
   CASH_ACCOUNTS,
@@ -17,7 +18,7 @@ import {
   netWorthHistory,
   netWorthNow,
 } from "@/lib/data";
-import { formatDate, formatMonth } from "@/lib/format";
+import { formatDate, formatMonth, monthSpanLabel } from "@/lib/format";
 import { useLedger, useUI } from "@/components/workspace/state";
 import { Delta, Money, Pct } from "@/components/ui/money";
 import { Metric, MetricStrip, PageHeader, Section, Tag } from "@/components/ui/primitives";
@@ -199,7 +200,7 @@ export function NetWorthView() {
             xEvery={3}
             points={hist.map((h) => ({
               label: formatMonth(h.month, "MMM yy"),
-              title: formatMonth(h.month, "MMMM yyyy") + (h.month === "2026-11" ? " (today)" : ""),
+              title: formatMonth(h.month, "MMMM yyyy") + (h.month === AS_OF_MONTH ? " (today)" : ""),
               value: h.netWorth,
             }))}
           />
@@ -242,7 +243,7 @@ export function NetWorthView() {
                 <th>Assets</th>
                 <th className="hidden w-[150px] sm:table-cell">Liquidity</th>
                 <th className="r w-[80px]">Share</th>
-                <th className="r hidden w-[150px] md:table-cell">Since October</th>
+                <th className="r hidden w-[150px] md:table-cell">{`Since ${formatMonth(prev.month, "MMMM")}`}</th>
                 <th className="r w-[140px]">Value</th>
               </tr>
             </thead>
@@ -342,13 +343,13 @@ export function NetWorthView() {
           </TableWrap>
         ) : (
           <Columns
-            label="Assets by type and liabilities, month-end, December 2024 to November 2026"
+            label={`Assets by type and liabilities, month-end, ${monthSpanLabel(hist[0].month, hist[hist.length - 1].month)}`}
             height={200}
             data={hist.map((h, i) => ({
               label: i % 3 === (hist.length - 1) % 3 ? formatMonth(h.month, "MMM yy") : "",
               title: formatMonth(h.month, "MMMM yyyy"),
               values: { cash: h.cash, investments: h.investments, realEstate: h.realEstate, gold: h.gold, retirement: h.retirement, vehicles: h.vehicles, liabilities: h.liabilities },
-              highlight: h.month === "2026-11",
+              highlight: h.month === AS_OF_MONTH,
             }))}
             series={[
               { key: "cash", label: "Cash", color: "var(--c1)", stack: "a" },

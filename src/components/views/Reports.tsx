@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AS_OF, CATEGORIES, LOANS, loanSchedule, loanStatus, monthFlows, netWorthHistory, netWorthNow, portfolioSummary } from "@/lib/data";
-import { formatMonth, monthOf } from "@/lib/format";
+import { AS_OF, AS_OF_MONTH, CATEGORIES, LOANS, loanSchedule, monthRange, loanStatus, monthFlows, netWorthHistory, netWorthNow, portfolioSummary } from "@/lib/data";
+import { addDays, addMonths, formatMonth, monthOf, monthSpanLabel } from "@/lib/format";
 import { useLedger, useUI } from "@/components/workspace/state";
 import { Delta, Money, Pct } from "@/components/ui/money";
 import { Metric, MetricStrip, PageHeader, Section } from "@/components/ui/primitives";
@@ -55,7 +55,7 @@ function FlowReport() {
   const [span, setSpan] = useState<6 | 12>(12);
   const all = monthFlows(txns);
   const flows = all.slice(-span);
-  const complete = flows.filter((f) => f.month !== "2026-11");
+  const complete = flows.filter((f) => f.month !== AS_OF_MONTH);
   const avg = (k: "income" | "spending" | "emis" | "invested") => complete.reduce((s, f) => s + f[k], 0) / complete.length;
   return (
     <>
@@ -81,7 +81,7 @@ function FlowReport() {
         <Columns
           label={`Income versus spending, EMIs and investments over ${span} months`}
           height={200}
-          data={flows.map((f) => ({ label: formatMonth(f.month, "MMM"), title: formatMonth(f.month, "MMMM yyyy") + (f.month === "2026-11" ? " (to date)" : ""), values: { income: f.income, spending: f.spending, invested: f.invested, emis: f.emis }, highlight: f.month === "2026-11" }))}
+          data={flows.map((f) => ({ label: formatMonth(f.month, "MMM"), title: formatMonth(f.month, "MMMM yyyy") + (f.month === AS_OF_MONTH ? " (to date)" : ""), values: { income: f.income, spending: f.spending, invested: f.invested, emis: f.emis }, highlight: f.month === AS_OF_MONTH }))}
           series={[
             { key: "income", label: "Money in", color: "var(--c1)" },
             { key: "spending", label: "Spending", color: "var(--c2)", stack: "out" },
@@ -111,7 +111,7 @@ function FlowReport() {
               const left = f.income - f.spending - f.emis - f.invested;
               return (
                 <tr key={f.month}>
-                  <td className="font-sans">{formatMonth(f.month, "MMM yyyy")}{f.month === "2026-11" && <span className="ml-1 text-xs text-ink-3">to date</span>}</td>
+                  <td className="font-sans">{formatMonth(f.month, "MMM yyyy")}{f.month === AS_OF_MONTH && <span className="ml-1 text-xs text-ink-3">to date</span>}</td>
                   <td className="r"><Money value={f.income} /></td>
                   <td className="r"><Money value={f.spending} /></td>
                   <td className="r"><Money value={f.emis} /></td>
@@ -128,11 +128,15 @@ function FlowReport() {
   );
 }
 
+const MONTH_START = `${AS_OF_MONTH}-01`;
+/** The six complete months before AS_OF_MONTH. */
+const COMPLETE_MONTHS = monthRange(monthOf(addMonths(MONTH_START, -6)), monthOf(addMonths(MONTH_START, -1)));
+
 function SpendingReport() {
   const { txns } = useLedger();
   const router = useRouter();
-  const [range, setRange] = useState<"6m" | "nov">("6m");
-  const months = range === "6m" ? ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"] : ["2026-11"];
+  const [range, setRange] = useState<"6m" | "month">("6m");
+  const months = range === "6m" ? COMPLETE_MONTHS : [AS_OF_MONTH];
   const cats = CATEGORIES.filter((c) => c.budget).map((c) => {
     const actual = -txns.filter((t) => t.categoryId === c.id && months.includes(monthOf(t.date)) && (t.type === "expense" || t.type === "refund")).reduce((s, t) => s + t.amount, 0);
     return { c, actual, perMonth: actual / months.length, budget: c.budget! };
@@ -144,14 +148,14 @@ function SpendingReport() {
     <>
       <Section
         className="mt-2"
-        title={range === "6m" ? "May to October 2026" : "November 2026 to date"}
+        title={range === "6m" ? monthSpanLabel(COMPLETE_MONTHS[0], COMPLETE_MONTHS[COMPLETE_MONTHS.length - 1]) : `${formatMonth(AS_OF_MONTH, "MMMM yyyy")} to date`}
         meta={<>total <Money value={total} /></>}
         actions={
           <div className="seg" role="group" aria-label="Period">
             <button type="button" aria-pressed={range === "6m"} onClick={() => setRange("6m")}>
               Last 6 complete months
             </button>
-            <button type="button" aria-pressed={range === "nov"} onClick={() => setRange("nov")}>
+            <button type="button" aria-pressed={range === "month"} onClick={() => setRange("month")}>
               This month
             </button>
           </div>
@@ -164,7 +168,7 @@ function SpendingReport() {
               <button
                 type="button"
                 className="grid w-full grid-cols-[minmax(120px,200px)_1fr_auto] items-center gap-4 border-t border-rule px-4 py-2 text-left first:border-t-0 hover:bg-paper-2 md:px-6"
-                onClick={() => router.push(`/transactions?category=${x.c.id}&period=custom&from=${months[0]}-01&to=${range === "nov" ? AS_OF : "2026-10-31"}`)}
+                onClick={() => router.push(`/transactions?category=${x.c.id}&period=custom&from=${months[0]}-01&to=${range === "month" ? AS_OF : addDays(MONTH_START, -1)}`)}
               >
                 <span className="truncate text-sm text-ink">{x.c.name}</span>
                 <span className="relative h-5">
@@ -290,7 +294,7 @@ function DebtReport() {
   const rows = LOANS.map((l) => {
     const s = loanStatus(l.id);
     const sched = loanSchedule(l.id);
-    const thisYear = sched.filter((r) => r.date.startsWith("2026") && r.date <= AS_OF).reduce((a, r) => a + r.interest, 0);
+    const thisYear = sched.filter((r) => r.date.startsWith(AS_OF.slice(0, 4)) && r.date <= AS_OF).reduce((a, r) => a + r.interest, 0);
     return { l, s, thisYear };
   });
   const emis = LOANS.reduce((s, l) => s + l.emi, 0);
@@ -299,7 +303,7 @@ function DebtReport() {
       <MetricStrip className="mt-4">
         <Metric label="Owed today" value={<Money value={nw.liabilities} compact="pref" />} sub={<Delta value={nw.liabilities - hist[0].liabilities} compact invert />} />
         <Metric label="EMIs to take-home" value={<Pct value={(emis / 246800) * 100} decimals={0} />} sub={<Money value={emis} />} />
-        <Metric label="Interest paid in 2026" value={<Money value={rows.reduce((s, r) => s + r.thisYear, 0)} compact="pref" />} sub="January to November" />
+        <Metric label={`Interest paid in ${AS_OF.slice(0, 4)}`} value={<Money value={rows.reduce((s, r) => s + r.thisYear, 0)} compact="pref" />} sub={`January to ${formatMonth(AS_OF_MONTH, "MMMM")}`} />
         <Metric label="Interest still to pay" value={<Money value={rows.reduce((s, r) => s + r.s.interestRemaining, 0)} compact="pref" />} sub="If every loan runs to term" />
       </MetricStrip>
       <Section title="Total owed by month-end" bodyClassName="px-4 pb-4 md:px-6">

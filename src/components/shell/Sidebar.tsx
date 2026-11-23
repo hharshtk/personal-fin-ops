@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { MessageCircle, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { NAV, SETTINGS_ITEM, activeNav, type NavItem } from "./nav";
 import { useRail } from "./theme";
 import { useUI } from "@/components/workspace/state";
@@ -41,7 +41,11 @@ function NavLink({ item, active, collapsed, onNavigate }: { item: NavItem; activ
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ chatOpen, chatPanelId, onToggleChat }: {
+  chatOpen: boolean;
+  chatPanelId?: string;
+  onToggleChat: () => void;
+}) {
   const pathname = usePathname();
   const active = activeNav(pathname);
   const { collapsed, toggle } = useRail();
@@ -60,6 +64,28 @@ export function Sidebar() {
             </button>
           )}
         </div>
+        {!isDrawer && (
+          <div className="px-2.5 py-1">
+            <button
+              type="button"
+              className={cx(
+                "flex h-8 w-full items-center gap-2.5 rounded-sm bg-pen-wash px-2 text-[13.5px] font-semibold text-pen transition-colors hover:bg-pen-wash-2",
+                c && "justify-center px-0",
+              )}
+              aria-haspopup="dialog"
+              aria-controls={chatPanelId}
+              aria-expanded={chatOpen}
+              title={c ? "Ask AI" : undefined}
+              onClick={(event) => {
+                event.currentTarget.focus({ preventScroll: true });
+                onToggleChat();
+              }}
+            >
+              <MessageCircle size={16} aria-hidden />
+              <span className={c ? "sr-only" : undefined}>Ask AI</span>
+            </button>
+          </div>
+        )}
         <nav aria-label="Workspaces" className="flex-1 overflow-y-auto px-2.5 pt-2 pb-4">
           {NAV.map((group, gi) => (
             <div key={gi} className={cx(gi > 0 && "mt-4")}>

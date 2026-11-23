@@ -4,7 +4,7 @@ import { Check, Repeat2 } from "lucide-react";
 import type { ISODate, MonthKey, Occurrence, Transaction } from "@/lib/types";
 import { AS_OF, getCommitment } from "@/lib/data";
 import { daysInMonth, formatMoney, parts, weekday } from "@/lib/format";
-import { effectiveStatus } from "@/components/workspace/actions";
+import { effectiveStatus } from "@/lib/payments";
 import { usePrefs } from "@/components/workspace/state";
 import { cx } from "@/components/ui/cx";
 

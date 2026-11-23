@@ -6,6 +6,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { ISODate, MonthKey } from "@/lib/types";
 import {
   AS_OF,
+  AS_OF_MONTH,
+  DAYS_LEFT_IN_MONTH,
   accountBalance,
   ASSET_CLASSES,
   attentionItems,
@@ -20,14 +22,17 @@ import {
   loanStatus,
   LOANS,
   monthFlows,
+  monthRange,
   netWorthHistory,
   netWorthNow,
   OCCURRENCES,
   portfolioSummary,
+  remainingBillAmount,
 } from "@/lib/data";
-import { diffDays, formatDate, formatLongDate, formatMonth, fyLabel } from "@/lib/format";
+import { addMonths, diffDays, formatDate, formatLongDate, formatMonth, fyLabel, monthOf, monthSpanLabel } from "@/lib/format";
 import { useLedger, usePrefs, useUI } from "@/components/workspace/state";
-import { effectiveStatus, usePayOccurrence } from "@/components/workspace/actions";
+import { usePayOccurrence } from "@/components/workspace/actions";
+import { effectiveStatus } from "@/lib/payments";
 import { useAttentionAction } from "@/components/shell/Topbar";
 import { Money, Delta, Pct } from "@/components/ui/money";
 import { BudgetMeter, DateMark, OccurrenceTag, Progress, Section, SeverityIcon } from "@/components/ui/primitives";
@@ -38,7 +43,8 @@ import { MonthSheet } from "@/components/calendar/MonthSheet";
 import { GoalStatus } from "@/components/inspector/panels";
 import { cx } from "@/components/ui/cx";
 
-const CAL_RANGE: MonthKey[] = ["2026-10", "2026-11", "2026-12", "2027-01"];
+/** Mini calendar: last month through two months ahead. */
+const CAL_RANGE: MonthKey[] = monthRange(monthOf(addMonths(`${AS_OF_MONTH}-01`, -1)), monthOf(addMonths(`${AS_OF_MONTH}-01`, 2)));
 
 function ViewLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -54,7 +60,7 @@ export function Overview() {
   const { inspect } = useUI();
   const pay = usePayOccurrence();
   const act = useAttentionAction();
-  const [month, setMonth] = useState<MonthKey>("2026-11");
+  const [month, setMonth] = useState<MonthKey>(AS_OF_MONTH);
   const [day, setDay] = useState<ISODate | null>(null);
 
   const nw = netWorthNow(txns);
@@ -64,7 +70,7 @@ export function Overview() {
   const flows = monthFlows(txns);
   const nov = flows[flows.length - 1];
   const out = nov.spending + nov.emis + nov.invested;
-  const budget = budgetFor("2026-11", txns);
+  const budget = budgetFor(AS_OF_MONTH, txns);
   const budgetTotal = budget.reduce((s, b) => s + b.budget, 0);
   const spent = budget.reduce((s, b) => s + b.actual, 0);
   const goldCoin = txns.find((t) => t.description.startsWith("Tanishq"));
@@ -73,11 +79,14 @@ export function Overview() {
   const portfolio = portfolioSummary();
   const recent = txns.filter((t) => t.date <= AS_OF).slice(0, 8);
   const incomes = txns.filter((t) => t.type === "income" || t.type === "dividend" || t.type === "interest");
-  const upcoming = OCCURRENCES.filter((o) => o.date >= "2026-11-01" && diffDays(o.date, AS_OF) <= 10)
-    .map((o) => ({ o, ...effectiveStatus(o, paidOccurrences) }))
+  const bills = OCCURRENCES.map((o) => {
+    const status = effectiveStatus(o, paidOccurrences);
+    return { o, ...status, amount: status.status === "paid" ? o.amount : remainingBillAmount(o, txns) };
+  });
+  const upcoming = bills.filter(({ o }) => o.date >= `${AS_OF_MONTH}-01` && diffDays(o.date, AS_OF) <= 10)
     .filter((x) => x.status !== "paid" || paidOccurrences.has(x.o.id))
     .slice(0, 8);
-  const dayEntries = day ? OCCURRENCES.filter((o) => o.date === day).map((o) => ({ o, ...effectiveStatus(o, paidOccurrences) })) : [];
+  const dayEntries = day ? bills.filter(({ o }) => o.date === day) : [];
   const mi = CAL_RANGE.indexOf(month);
 
   return (
@@ -89,6 +98,9 @@ export function Overview() {
             {formatLongDate(AS_OF)} · {fyLabel(AS_OF, prefs.fyStartMonth)}, month {prefs.fyStartMonth === 4 ? 8 : 11} of 12
           </p>
         </div>
+        <Link href="/financial-plan" className="btn">
+          Financial plan <ChevronRight size={14} aria-hidden />
+        </Link>
       </div>
 
       {/* ───── Position: where do I stand? ───── */}
@@ -105,13 +117,13 @@ export function Overview() {
               <Money value={nw.netWorth} compact="pref" />
             </Link>
             <span className="text-sm">
-              <Delta value={change} pct={(change / prev.netWorth) * 100} /> <span className="text-ink-3">since October</span>
+              <Delta value={change} pct={(change / prev.netWorth) * 100} /> <span className="text-ink-3">{`since ${formatMonth(prev.month, "MMMM")}`}</span>
             </span>
           </div>
           <TrendChart
             className="mt-3"
             height={92}
-            label="Net worth, December 2024 to November 2026"
+            label={`Net worth, ${monthSpanLabel(hist[0].month, hist[hist.length - 1].month)}`}
             xEvery={6}
             points={hist.map((h) => ({ label: formatMonth(h.month, "MMM yy"), title: formatMonth(h.month, "MMMM yyyy"), value: h.netWorth }))}
           />
@@ -153,9 +165,9 @@ export function Overview() {
         <div className="px-4 py-4 md:px-5 @6xl:col-span-4">
           <div className="flex items-baseline justify-between">
             <Link href="/budget" className="label hover:text-pen">
-              November so far
+              {`${formatMonth(AS_OF_MONTH, "MMMM")} so far`}
             </Link>
-            <span className="text-xs text-ink-3">8 days left</span>
+            <span className="text-xs text-ink-3">{`${DAYS_LEFT_IN_MONTH} days left`}</span>
           </div>
           <dl className="mt-2 space-y-1.5 text-sm">
             <div className="flex justify-between">
@@ -212,13 +224,13 @@ export function Overview() {
           className="@5xl:col-span-8"
           id="sheet"
           title={formatMonth(month, "MMMM yyyy")}
-          meta={month === "2026-11" ? "What has cleared, what is still due" : undefined}
+          meta={month === AS_OF_MONTH ? "What has cleared, what is still due" : undefined}
           actions={
             <>
               <button type="button" className="btn btn-ghost btn-sm btn-icon" disabled={mi <= 0} onClick={() => (setMonth(CAL_RANGE[mi - 1]), setDay(null))} aria-label="Previous month">
                 <ChevronLeft size={16} aria-hidden />
               </button>
-              <button type="button" className="btn btn-sm" disabled={month === "2026-11"} onClick={() => (setMonth("2026-11"), setDay(null))}>
+              <button type="button" className="btn btn-sm" disabled={month === AS_OF_MONTH} onClick={() => (setMonth(AS_OF_MONTH), setDay(null))}>
                 This month
               </button>
               <button type="button" className="btn btn-ghost btn-sm btn-icon" disabled={mi >= CAL_RANGE.length - 1} onClick={() => (setMonth(CAL_RANGE[mi + 1]), setDay(null))} aria-label="Next month">
@@ -230,7 +242,7 @@ export function Overview() {
         >
           <MonthSheet
             month={month}
-            occurrences={OCCURRENCES}
+            occurrences={bills.map(({ o, amount }) => ({ ...o, amount }))}
             incomes={incomes}
             paid={paidOccurrences}
             selected={day}
@@ -303,7 +315,7 @@ export function Overview() {
 
       {/* ───── What changed: spending, flows, activity ───── */}
       <div className="grid gap-px border-b border-rule bg-rule @3xl:grid-cols-2 @6xl:grid-cols-3 [&>*]:bg-paper">
-        <Section title="Budget exceptions" meta="November" actions={<ViewLink href="/budget">Budget</ViewLink>} bodyClassName="px-4 pb-4 md:px-5">
+        <Section title="Budget exceptions" meta={formatMonth(AS_OF_MONTH, "MMMM")} actions={<ViewLink href="/budget">Budget</ViewLink>} bodyClassName="px-4 pb-4 md:px-5">
           <div className="flex items-baseline justify-between text-sm">
             <span className="text-ink-2">
               <Money value={spent} className="font-semibold text-ink" /> of <Money value={budgetTotal} /> spent
@@ -332,13 +344,13 @@ export function Overview() {
 
         <Section title="Cash flow" meta="last 6 months" actions={<ViewLink href="/reports">Reports</ViewLink>} bodyClassName="px-4 pb-4 md:px-5">
           <Columns
-            label="Money in versus money out, June to November 2026"
+            label={`Money in versus money out, ${monthSpanLabel(flows[flows.length - 6].month, flows[flows.length - 1].month)}`}
             height={136}
             data={flows.slice(-6).map((f) => ({
               label: formatMonth(f.month, "MMM"),
-              title: formatMonth(f.month, "MMMM yyyy") + (f.month === "2026-11" ? " (to date)" : ""),
+              title: formatMonth(f.month, "MMMM yyyy") + (f.month === AS_OF_MONTH ? " (to date)" : ""),
               values: { income: f.income, spending: f.spending, invested: f.invested, emis: f.emis },
-              highlight: f.month === "2026-11",
+              highlight: f.month === AS_OF_MONTH,
             }))}
             series={[
               { key: "income", label: "Money in", color: "var(--c1)" },
@@ -468,14 +480,14 @@ function OccList({
   onOpen,
   onPay,
 }: {
-  entries: { o: (typeof OCCURRENCES)[number]; status: (typeof OCCURRENCES)[number]["status"]; paidOn?: string }[];
+  entries: { o: (typeof OCCURRENCES)[number]; status: (typeof OCCURRENCES)[number]["status"]; paidOn?: string; amount: number }[];
   onOpen: (id: string) => void;
   onPay: (o: (typeof OCCURRENCES)[number]) => void;
 }) {
   if (!entries.length) return <p className="text-sm text-ink-3">Nothing due in the next 10 days.</p>;
   return (
     <ul className="grid gap-x-6 @3xl:grid-cols-2">
-      {entries.map(({ o, status, paidOn }) => {
+      {entries.map(({ o, status, paidOn, amount }) => {
         const c = getCommitment(o.commitmentId)!;
         return (
           <li key={o.id} className="flex items-center gap-3 border-b border-rule py-1.5 last:border-b-0 @3xl:[&:nth-last-child(2):nth-child(odd)]:border-b-0">
@@ -483,7 +495,7 @@ function OccList({
             <button type="button" onClick={() => onOpen(o.id)} className="min-w-0 flex-1 truncate text-left text-sm text-ink hover:text-pen hover:underline">
               {c.name}
             </button>
-            <Money value={o.amount} className={cx("num text-sm", status === "paid" && "struck")} />
+            <Money value={amount} className={cx("num text-sm", status === "paid" && "struck")} />
             <span className="w-[74px] text-right">
               {status === "due" || status === "overdue" ? (
                 <button type="button" className="btn btn-sm h-6 px-2" onClick={() => onPay(o)} title={`Mark ${c.name} as paid`}>

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { RotateCcw } from "lucide-react";
 import { AS_OF, PROFILE } from "@/lib/data";
 import { formatDate, formatMoney, fyLabel } from "@/lib/format";
-import { useLedger, usePrefs, useUI, type Prefs } from "@/components/workspace/state";
+import { useEmployeeEquity, useLedger, usePrefs, useUI, type Prefs } from "@/components/workspace/state";
 import { useDensity, useRail, useTheme, type ThemePref } from "@/components/shell/theme";
 import { PageHeader } from "@/components/ui/primitives";
 import { cx } from "@/components/ui/cx";
@@ -62,7 +62,9 @@ const SECTIONS = [
 
 export function SettingsView() {
   const { prefs, setPref, resetPrefs } = usePrefs();
-  const { sessionChanges, resetSession } = useLedger();
+  const { sessionChanges: ledgerChanges, resetSession } = useLedger();
+  const { changes: equityChanges, resetEquity } = useEmployeeEquity();
+  const sessionChanges = ledgerChanges + equityChanges;
   const { toast } = useUI();
   const theme = useTheme();
   const density = useDensity();
@@ -231,13 +233,14 @@ export function SettingsView() {
             <Row label="Demonstration data" hint={`Every figure is synthetic, fixed as of ${formatDate(AS_OF)}. Bank, fund and insurer names are labels only; nothing is connected.`}>
               <span className="text-sm text-ink-3">Read only</span>
             </Row>
-            <Row label="Changes made in this session" hint="Transactions you added or edited, and bills marked paid. They disappear when you reload.">
+            <Row label="Changes made in this session" hint="Changes to transactions, bills and employee equity disappear when you reload.">
               <button
                 type="button"
                 className="btn"
                 disabled={!sessionChanges}
                 onClick={() => {
                   resetSession();
+                  resetEquity();
                   toast({ message: "Session changes cleared" });
                 }}
               >

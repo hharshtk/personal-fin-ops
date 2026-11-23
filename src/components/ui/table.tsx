@@ -16,7 +16,7 @@ export function useSort<T, K extends string>(rows: T[], accessors: Record<K, (r:
     return sort.dir === "asc" ? c : -c;
   });
   const toggle = (key: K) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: typeof get === "function" && typeof accessors[key](rows[0]) === "number" ? "desc" : "asc" }));
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: rows.length && typeof accessors[key](rows[0]) === "number" ? "desc" : "asc" }));
   return { sorted, sort, toggle };
 }
 
@@ -48,6 +48,6 @@ export function SortTh<K extends string>({
 }
 
 /** Horizontal scroll container for wide tables on narrow screens */
-export function TableWrap({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx("w-full overflow-x-auto", className)}>{children}</div>;
+export function TableWrap({ children, className, label }: { children: ReactNode; className?: string; label?: string }) {
+  return <div className={cx("w-full overflow-x-auto", className)} role={label ? "region" : undefined} aria-label={label} tabIndex={label ? 0 : undefined}>{children}</div>;
 }

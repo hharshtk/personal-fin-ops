@@ -11,6 +11,8 @@ import {
   budgetFor,
   CATEGORIES,
   cardStatus,
+  cardBillPayments,
+  entityHref,
   getAccount,
   getAsset,
   getCard,
@@ -29,13 +31,15 @@ import {
   LOANS,
   OCCURRENCES,
   portfolioSummary,
+  remainingBillAmount,
   SIPS,
   entityName,
   ASSET_CLASSES,
 } from "@/lib/data";
-import { diffDays, durationLabel, formatDate, monthOf, monthsBetween, relativeDays } from "@/lib/format";
+import { diffDays, durationLabel, formatDate, formatMonth, monthOf, monthsBetween, relativeDays } from "@/lib/format";
 import { useLedger, useUI } from "@/components/workspace/state";
-import { effectiveStatus, usePayOccurrence } from "@/components/workspace/actions";
+import { usePayOccurrence } from "@/components/workspace/actions";
+import { effectiveStatus } from "@/lib/payments";
 import { Money, Pct } from "@/components/ui/money";
 import { BudgetMeter, DateMark, Facts, OccurrenceTag, Progress, Tag } from "@/components/ui/primitives";
 import { cx } from "@/components/ui/cx";
@@ -286,7 +290,7 @@ export function CardInspector({ id }: { id: string }) {
   const card = getCard(id);
   if (!card) return <Head title="Card not found" />;
   const st = cardStatus(id, txns);
-  const occ = OCCURRENCES.find((o) => o.commitmentId === (id === "hdfc-cc" ? "c-hdfc-cc" : "c-icici-cc") && o.date === st.lastStatement?.due);
+  const occ = OCCURRENCES.find((o) => o.commitmentId === st.commitment?.id && o.date === st.lastStatement?.due);
   const eff = occ ? effectiveStatus(occ, paidOccurrences) : undefined;
   const ledger = accountLedger(id, txns).slice(0, 6);
 
@@ -299,7 +303,7 @@ export function CardInspector({ id }: { id: string }) {
             <div>
               <div className="label">Statement of {formatDate(st.lastStatement.date, "d MMM")}</div>
               <div className="mt-0.5 flex items-baseline gap-2">
-                <Money value={st.lastStatement.amount} className={cx("figure text-xl", eff?.status === "paid" && "struck")} />
+                <Money value={st.lastStatement.remaining} className="figure text-xl" />
                 <span className="text-xs text-ink-3">due {formatDate(st.lastStatement.due, "d MMM")}</span>
               </div>
             </div>
@@ -311,7 +315,7 @@ export function CardInspector({ id }: { id: string }) {
             ["Unbilled", <Money key="u" value={st.unbilled} />],
             ["Credit limit", <Money key="l" value={card.limit} />],
             ["Available", <Money key="a" value={st.available} />],
-            ["Reward points", card.rewardPoints ? card.rewardPoints.toLocaleString("en-IN") : "Amazon Pay cashback"],
+            ["Rewards", card.rewardPoints ? `${card.rewardPoints.toLocaleString("en-IN")} points` : "Amazon Pay cashback"],
           ]}
         />
         <div className="mt-4">
@@ -332,7 +336,7 @@ export function CardInspector({ id }: { id: string }) {
         <TxnRows rows={ledger.map((r) => r.txn)} accountId={id} />
       </Block>
       <Block>
-        <OpenLink href={`/liabilities/${id}`}>Open card</OpenLink>
+        <OpenLink href={entityHref({ kind: "card", id })}>Open credit card dashboard</OpenLink>
       </Block>
     </div>
   );
@@ -679,14 +683,16 @@ export function OccurrenceInspector({ id }: { id: string }) {
   const c = getCommitment(occ.commitmentId)!;
   const eff = effectiveStatus(occ, paidOccurrences);
   const history = OCCURRENCES.filter((o) => o.commitmentId === c.id && o.date < occ.date).slice(-4).reverse();
-  const paidTxn = occ.txnId ? txns.find((t) => t.id === occ.txnId) : txns.find((t) => t.source === "manual" && t.commitmentId === c.id && monthOf(t.date) === monthOf(AS_OF));
+  const paidTxn = c.kind === "card" && c.link
+    ? cardBillPayments(occ.id, c.link.id, txns)[0]
+    : occ.txnId ? txns.find((t) => t.id === occ.txnId) : txns.find((t) => t.source === "manual" && t.occurrenceId === occ.id);
 
   return (
     <div>
       <Head
         eyebrow={`${c.cadence} · ${c.autopay ? "Autopay" : "Manual payment"}`}
         title={c.name}
-        figure={<Money value={occ.amount} className={cx(eff.status === "paid" && "struck")} />}
+        figure={<Money value={eff.status === "paid" ? occ.amount : remainingBillAmount(occ, txns)} className={cx(eff.status === "paid" && "struck")} />}
         sub={
           <span className="flex items-center gap-3">
             <span>
@@ -713,7 +719,7 @@ export function OccurrenceInspector({ id }: { id: string }) {
         {eff.status === "overdue" && <p className="mt-2 text-xs text-red">{-diffDays(occ.date, AS_OF)} days late. Most billers add a late fee after 7 days.</p>}
         {paidTxn && (
           <p className="mt-3 text-sm text-ink-2">
-            Paid by <RefLink target={{ kind: "transaction", id: paidTxn.id }}>{paidTxn.description}</RefLink> on {formatDate(paidTxn.date, "d MMM")}
+            {eff.status === "paid" ? "Paid by" : "Last payment"} <RefLink target={{ kind: "transaction", id: paidTxn.id }}>{paidTxn.description}</RefLink> on {formatDate(paidTxn.date, "d MMM")}
           </p>
         )}
       </Block>
@@ -752,7 +758,7 @@ export function CategoryInspector({ id }: { id: string }) {
   const top = [...byMerchant.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   return (
     <div>
-      <Head eyebrow="November 2026" title={cat.name} figure={line ? <Money value={line.actual} /> : undefined} sub={line ? <>of <Money value={line.budget} /> budget</> : undefined} />
+      <Head eyebrow={formatMonth(month, "MMMM yyyy")} title={cat.name} figure={line ? <Money value={line.actual} /> : undefined} sub={line ? <>of <Money value={line.budget} /> budget</> : undefined} />
       {line && (
         <Block>
           <BudgetMeter ratio={line.ratio} />

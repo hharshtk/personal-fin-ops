@@ -39,6 +39,7 @@ import {
   ledgerAccountName,
   loanStatus,
   cardStatus,
+  entityHref,
   AS_OF,
 } from "@/lib/data";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -96,13 +97,13 @@ export function CommandPalette() {
       { id: "act-keys", group: "Actions", label: "Keyboard shortcuts", icon: Keyboard, shortcut: ["?"], run: () => setShortcutsOpen(true) },
     );
     for (const n of ALL_NAV) {
-      list.push({ id: `nav-${n.href}`, group: "Go to", label: n.label, icon: n.icon, shortcut: ["G", n.key.toUpperCase()], run: () => router.push(n.href) });
+      list.push({ id: `nav-${n.href}`, group: "Go to", label: n.label, keywords: n.keywords, icon: n.icon, shortcut: ["G", n.key.toUpperCase()], run: () => router.push(n.href) });
     }
     for (const a of CASH_ACCOUNTS) {
       list.push({ id: `acc-${a.id}`, group: "Accounts", label: ledgerAccountName(a.id), hint: formatMoney(a.balance), keywords: `${a.institution} ${a.role} ${a.kind}`, icon: Landmark, run: open({ kind: "account", id: a.id }) });
     }
     for (const c of CARDS) {
-      list.push({ id: `card-${c.id}`, group: "Cards & loans", label: ledgerAccountName(c.id), hint: `${formatMoney(cardStatus(c.id, txns).outstanding)} owed`, keywords: `credit card ${c.institution}`, icon: CreditCard, run: open({ kind: "card", id: c.id }) });
+      list.push({ id: `card-${c.id}`, group: "Cards & loans", label: ledgerAccountName(c.id), hint: `${formatMoney(cardStatus(c.id, txns).outstanding)} owed`, keywords: `credit card ${c.institution}`, icon: CreditCard, run: () => router.push(entityHref({ kind: "card", id: c.id })) });
     }
     for (const l of LOANS) {
       list.push({ id: `loan-${l.id}`, group: "Cards & loans", label: `${l.name} · ${l.lender}`, hint: `${formatMoney(loanStatus(l.id).outstanding)} outstanding`, keywords: `loan emi ${l.kind}`, icon: Landmark, run: open({ kind: "loan", id: l.id }) });

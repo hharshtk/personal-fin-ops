@@ -3,17 +3,17 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Repeat2 } from "lucide-react";
 import type { CommitmentKind, ISODate, MonthKey } from "@/lib/types";
-import { AS_OF, COMMITMENTS, OCCURRENCES, getCategory, getCommitment, ledgerAccountShort } from "@/lib/data";
+import { AS_OF, AS_OF_MONTH, CALENDAR_MONTHS, COMMITMENTS, OCCURRENCES, getCategory, getCommitment, ledgerAccountShort, remainingBillAmount } from "@/lib/data";
 import { diffDays, formatDate, formatMonth, relativeDays } from "@/lib/format";
 import { useLedger, usePrefs, useUI } from "@/components/workspace/state";
-import { effectiveStatus, usePayOccurrence } from "@/components/workspace/actions";
+import { usePayOccurrence } from "@/components/workspace/actions";
+import { effectiveStatus } from "@/lib/payments";
 import { Money } from "@/components/ui/money";
 import { DateMark, Metric, MetricStrip, OccurrenceTag, PageHeader, Section } from "@/components/ui/primitives";
 import { MonthSheet } from "@/components/calendar/MonthSheet";
 import { TableWrap } from "@/components/ui/table";
 import { cx } from "@/components/ui/cx";
 
-const MONTHS: MonthKey[] = ["2026-10", "2026-11", "2026-12", "2027-01", "2027-02"];
 const KINDS: { id: "all" | CommitmentKind | "invest"; label: string; match: (k: CommitmentKind) => boolean }[] = [
   { id: "all", label: "All", match: () => true },
   { id: "emi", label: "EMIs", match: (k) => k === "emi" },
@@ -26,25 +26,28 @@ const KINDS: { id: "all" | CommitmentKind | "invest"; label: string; match: (k: 
 ];
 
 export function CalendarView() {
-  const { paidOccurrences } = useLedger();
+  const { paidOccurrences, txns } = useLedger();
   const { prefs } = usePrefs();
   const { inspect } = useUI();
   const pay = usePayOccurrence();
-  const [month, setMonth] = useState<MonthKey>("2026-11");
+  const [month, setMonth] = useState<MonthKey>(AS_OF_MONTH);
   const [view, setView] = useState<"month" | "list">("month");
   const [kind, setKind] = useState<(typeof KINDS)[number]["id"]>("all");
   const [day, setDay] = useState<ISODate | null>(null);
-  const mi = MONTHS.indexOf(month);
+  const mi = CALENDAR_MONTHS.indexOf(month);
 
   const match = KINDS.find((k) => k.id === kind)!.match;
   const occs = OCCURRENCES.filter((o) => match(getCommitment(o.commitmentId)!.kind));
-  const withStatus = occs.map((o) => ({ o, ...effectiveStatus(o, paidOccurrences) }));
+  const withStatus = occs.map((o) => {
+    const status = effectiveStatus(o, paidOccurrences);
+    return { o, ...status, amount: status.status === "paid" ? o.amount : remainingBillAmount(o, txns) };
+  });
   const inMonth = withStatus.filter((x) => x.o.date.startsWith(month));
   const overdue = withStatus.filter((x) => x.status === "overdue");
   const due30 = withStatus.filter((x) => x.status === "due" && diffDays(x.o.date, AS_OF) <= 30);
   const auto30 = withStatus.filter((x) => x.status === "scheduled" && diffDays(x.o.date, AS_OF) <= 30);
-  const paidNov = withStatus.filter((x) => x.status === "paid" && x.o.date.startsWith("2026-11"));
-  const sum = (xs: typeof withStatus) => xs.reduce((s, x) => s + x.o.amount, 0);
+  const paidThisMonth = withStatus.filter((x) => x.status === "paid" && x.o.date.startsWith(AS_OF_MONTH));
+  const sum = (xs: typeof withStatus) => xs.reduce((s, x) => s + x.amount, 0);
   const side = day ? withStatus.filter((x) => x.o.date === day) : withStatus.filter((x) => x.o.date >= AS_OF && diffDays(x.o.date, AS_OF) <= 14 && x.status !== "paid");
 
   const Row = ({ x, compact = false }: { x: (typeof withStatus)[number]; compact?: boolean }) => {
@@ -57,7 +60,7 @@ export function CalendarView() {
           <span className={cx("block truncate text-sm hover:text-pen hover:underline", x.status === "paid" ? "text-ink-3" : "text-ink")}>{c.name}</span>
           <span className="block truncate text-xs text-ink-3">{compact ? relativeDays(x.o.date, AS_OF) + " · " : ""}from {ledgerAccountShort(c.payFromId)}</span>
         </button>
-        <Money value={x.o.amount} className={cx("num text-sm font-semibold", x.status === "paid" && "struck font-normal")} />
+        <Money value={x.amount} className={cx("num text-sm font-semibold", x.status === "paid" && "struck font-normal")} />
         <span className="w-[86px] text-right">
           {red ? (
             <button type="button" className="btn btn-sm h-6 px-2" onClick={() => pay(x.o)}>
@@ -78,19 +81,19 @@ export function CalendarView() {
         <Metric label="Overdue" value={<span className={overdue.length ? "text-red" : undefined}>{overdue.length}</span>} sub={overdue.length ? <Money value={sum(overdue)} /> : "Nothing late"} onClick={overdue[0] ? () => inspect({ kind: "commitment", id: overdue[0].o.id }) : undefined} />
         <Metric label="Needs you, next 30 days" value={due30.length} sub={<><Money value={sum(due30)} /> to pay manually</>} />
         <Metric label="Autopay, next 30 days" value={auto30.length} sub={<><Money value={sum(auto30)} /> will debit itself</>} />
-        <Metric label="Paid in November" value={paidNov.length} sub={<><Money value={sum(paidNov)} /> cleared</>} />
+        <Metric label={`Paid in ${formatMonth(AS_OF_MONTH, "MMMM")}`} value={paidThisMonth.length} sub={<><Money value={sum(paidThisMonth)} /> cleared</>} />
       </MetricStrip>
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
         <div className="flex items-center gap-1">
-          <button type="button" className="btn btn-ghost btn-icon" disabled={mi <= 0} onClick={() => (setMonth(MONTHS[mi - 1]), setDay(null))} aria-label="Previous month">
+          <button type="button" className="btn btn-ghost btn-icon" disabled={mi <= 0} onClick={() => (setMonth(CALENDAR_MONTHS[mi - 1]), setDay(null))} aria-label="Previous month">
             <ChevronLeft size={16} aria-hidden />
           </button>
           <h2 className="figure w-[180px] text-center text-xl">{formatMonth(month, "MMMM yyyy")}</h2>
-          <button type="button" className="btn btn-ghost btn-icon" disabled={mi >= MONTHS.length - 1} onClick={() => (setMonth(MONTHS[mi + 1]), setDay(null))} aria-label="Next month">
+          <button type="button" className="btn btn-ghost btn-icon" disabled={mi >= CALENDAR_MONTHS.length - 1} onClick={() => (setMonth(CALENDAR_MONTHS[mi + 1]), setDay(null))} aria-label="Next month">
             <ChevronRight size={16} aria-hidden />
           </button>
-          <button type="button" className="btn btn-sm ml-2" disabled={month === "2026-11"} onClick={() => (setMonth("2026-11"), setDay(null))}>
+          <button type="button" className="btn btn-sm ml-2" disabled={month === AS_OF_MONTH} onClick={() => (setMonth(AS_OF_MONTH), setDay(null))}>
             Today
           </button>
         </div>
@@ -119,7 +122,7 @@ export function CalendarView() {
             <div className="min-w-[600px]">
               <MonthSheet
                 month={month}
-                occurrences={occs}
+                occurrences={withStatus.map(({ o, amount }) => ({ ...o, amount }))}
                 paid={paidOccurrences}
                 selected={day}
                 onSelect={(d) => setDay((cur) => (cur === d ? null : d))}
@@ -171,7 +174,7 @@ export function CalendarView() {
                     <td className="text-ink-2">{getCategory(c.categoryId).name}</td>
                     <td className="text-ink-2">{ledgerAccountShort(c.payFromId)}</td>
                     <td className="r">
-                      <Money value={x.o.amount} className={cx("num font-semibold", x.status === "paid" && "struck font-normal")} />
+                      <Money value={x.amount} className={cx("num font-semibold", x.status === "paid" && "struck font-normal")} />
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       {red ? (

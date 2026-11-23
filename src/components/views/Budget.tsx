@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, Table2, BarChart3 } from "lucide-react";
 import type { MonthKey } from "@/lib/types";
-import { AS_OF, BUDGET_MONTHS, COMMITMENTS, budgetFor, flowForMonth, monthFlows, ledgerAccountShort } from "@/lib/data";
-import { daysInMonth, formatMonth, parts } from "@/lib/format";
+import { AS_OF, AS_OF_MONTH, BUDGET_MONTHS, COMMITMENTS, DATA_START_DATE, budgetFor, flowForMonth, monthFlows, ledgerAccountShort } from "@/lib/data";
+import { daysInMonth, formatMonth, monthOf, monthSpanLabel, parts } from "@/lib/format";
 import { useLedger, usePrefs, useUI } from "@/components/workspace/state";
 import { Money, Pct } from "@/components/ui/money";
 import { BudgetMeter, Metric, MetricStrip, PageHeader, Progress, Section } from "@/components/ui/primitives";
@@ -21,7 +21,7 @@ export function BudgetView() {
   const { txns } = useLedger();
   const { prefs } = usePrefs();
   const { toast } = useUI();
-  const [month, setMonth] = useState<MonthKey>("2026-11");
+  const [month, setMonth] = useState<MonthKey>(AS_OF_MONTH);
   const [editing, setEditing] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, number>>({});
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -34,7 +34,7 @@ export function BudgetView() {
   const totalBudget = lines.reduce((s, l) => s + l.budget, 0);
   const spent = lines.reduce((s, l) => s + l.actual, 0);
   const flow = flowForMonth(month, txns);
-  const isCurrent = month === "2026-11";
+  const isCurrent = month === AS_OF_MONTH;
   const { y, m } = parts(`${month}-01`);
   const dim = daysInMonth(y, m);
   const daysLeft = isCurrent ? dim - parts(AS_OF).d : 0;
@@ -53,7 +53,7 @@ export function BudgetView() {
   const billTotal = bills.reduce((s, c) => s + c.amount, 0);
   const committed = groups.flatMap((g) => g.items).reduce((s, c) => s + c.amount, 0);
   const planGap = TAKE_HOME - committed - totalBudget;
-  const recent = monthFlows(txns).filter((f) => f.month >= "2026-05" && f.month <= "2026-10");
+  const recent = monthFlows(txns).filter((f) => f.month >= monthOf(DATA_START_DATE) && f.month < AS_OF_MONTH);
   const avgSpend = recent.reduce((s, f) => s + f.spending, 0) / recent.length;
 
   const startEdit = () => {
@@ -328,12 +328,12 @@ function CashFlow({ asTable, selected, onSelect }: { asTable: boolean; selected:
     );
   return (
     <Columns
-      label="Money in versus money out by month, December 2025 to November 2026"
+      label={`Money in versus money out by month, ${monthSpanLabel(flows[0].month, flows[flows.length - 1].month)}`}
       height={180}
       onSelect={(i) => onSelect(flows[i].month)}
       data={flows.map((f) => ({
         label: formatMonth(f.month, "MMM"),
-        title: `${formatMonth(f.month, "MMMM yyyy")}${f.month === "2026-11" ? " (to date)" : ""} · net ${Math.round((f.income - f.spending - f.emis - f.invested) / 1000)}K`,
+        title: `${formatMonth(f.month, "MMMM yyyy")}${f.month === AS_OF_MONTH ? " (to date)" : ""} · net ${Math.round((f.income - f.spending - f.emis - f.invested) / 1000)}K`,
         values: { income: f.income, spending: f.spending, invested: f.invested, emis: f.emis },
         highlight: f.month === selected,
       }))}

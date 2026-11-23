@@ -1,9 +1,11 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { BriefcaseBusiness } from "lucide-react";
 import { useEffect } from "react";
 import type { AssetClass } from "@/lib/types";
-import { AS_OF, ASSET_CLASSES, HOLDINGS, SIPS, getGoal, getHolding, ledgerAccountShort, portfolioSummary } from "@/lib/data";
+import { AS_OF, AS_OF_MONTH, ASSET_CLASSES, HOLDINGS, SIPS, getGoal, getHolding, ledgerAccountShort, portfolioSummary } from "@/lib/data";
 import { addMonths, formatDate, parts } from "@/lib/format";
 import { useUI } from "@/components/workspace/state";
 import { Money, Pct } from "@/components/ui/money";
@@ -49,11 +51,12 @@ export function InvestmentsView() {
   );
   const sub = rows.reduce((a, h) => ({ inv: a.inv + h.invested, cur: a.cur + h.current }), { inv: 0, cur: 0 });
   const selected = inspector?.kind === "holding" ? inspector.id : null;
-  const nextSip = (day: number) => (parts(AS_OF).d < day ? `2026-11-${String(day).padStart(2, "0")}` : addMonths("2026-11-01", 1, day));
+  const nextSip = (day: number) => (parts(AS_OF).d < day ? `${AS_OF_MONTH}-${String(day).padStart(2, "0")}` : addMonths(`${AS_OF_MONTH}-01`, 1, day));
 
   return (
     <div>
-      <PageHeader title="Investments" meta={`Market-linked and retirement holdings · prices as of ${formatDate(AS_OF)} close`} />
+      <PageHeader title="Investments" meta={`Market-linked and retirement holdings · prices as of ${formatDate(AS_OF)} close`}
+        actions={<Link href="/employee-equity" className="btn"><BriefcaseBusiness size={15} aria-hidden /> Employee equity</Link>} />
       <MetricStrip className="mt-4">
         <Metric label="Current value" value={<Money value={p.current} compact="pref" />} sub={`${HOLDINGS.length} holdings on 5 platforms`} size="lg" />
         <Metric label="Invested" value={<Money value={p.invested} compact="pref" />} sub="Cost of units still held" />

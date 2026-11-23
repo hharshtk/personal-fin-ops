@@ -5,6 +5,15 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   reactCompiler: true,
+  redirects() {
+    return [
+      {
+        source: "/liabilities/:id(hdfc-cc|icici-cc)",
+        destination: "/credit-cards/:id",
+        permanent: true,
+      },
+    ];
+  },
   turbopack: {
     rules: {
       "*.css": {

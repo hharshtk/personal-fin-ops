@@ -6,6 +6,7 @@ import { ChevronRight, Inbox, Lock, Plus } from "lucide-react";
 import {
   AS_OF,
   CASH_ACCOUNTS,
+  DATA_START_DATE,
   accountLedger,
   getCategory,
   getGoal,
@@ -13,7 +14,7 @@ import {
   CARDS,
   cardStatus,
 } from "@/lib/data";
-import { addDays, addMonths, diffDays, formatDate, formatMonth, relativeDays } from "@/lib/format";
+import { addDays, addMonths, diffDays, formatDate, formatMonth, relativeDays, weekday } from "@/lib/format";
 import { useLedger, useUI } from "@/components/workspace/state";
 import { Money, Pct } from "@/components/ui/money";
 import { DateMark, EmptyState, Facts, Metric, MetricStrip, OccurrenceTag, PageHeader, Progress, Section } from "@/components/ui/primitives";
@@ -205,7 +206,8 @@ export function AccountDetail({ id }: { id: string }) {
   if (!deposit && ledger.length) {
     const asc = [...ledger].reverse();
     const opening = asc[0].balance - asc[0].amount;
-    let cursor = "2026-05-03";
+    // First week ending (Sunday) on or after the ledger starts
+    let cursor = addDays(DATA_START_DATE, (7 - weekday(DATA_START_DATE)) % 7);
     let i = 0;
     let bal = opening;
     while (cursor <= AS_OF) {
@@ -371,7 +373,7 @@ function DepositDetail({ id }: { id: string }) {
                     <span className="num w-5 text-xs text-ink-3">{r.n}</span>
                     <span className={cx(r.paid ? "text-ink-3" : "text-ink")}>{formatMonth(r.date.slice(0, 7), "MMM yy")}</span>
                   </span>
-                  {r.paid ? <OccurrenceTag status="paid" /> : <span className="text-xs text-ink-3">{r.date === "2026-12-03" ? "next" : ""}</span>}
+                  {r.paid ? <OccurrenceTag status="paid" /> : <span className="text-xs text-ink-3">{r.n === a.installmentsPaid! + 1 ? "next" : ""}</span>}
                 </li>
               ))}
             </ol>

@@ -37,4 +37,4 @@ npm run build
 
 Keep the types and the selector signatures in `src/lib/data/index.ts`, and swap the fixture sources behind them for API calls. Views do not import fixtures directly.
 
-Product context is in `PRODUCT.md`. The visual direction is recorded in `.impeccable/surfaces/`.
+The rules that keep this codebase compatible with the future iOS and Android apps are in `CONSTITUTION.md`. Read them before building anything. Product context is in `PRODUCT.md`. The visual direction is recorded in `.impeccable/surfaces/`.

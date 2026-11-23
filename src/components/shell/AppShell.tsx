@@ -1,8 +1,9 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, type ReactNode } from "react";
-import { CheckCircle2, CircleAlert, X } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { CheckCircle2, CircleAlert, MessageCircle, X } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { CommandPalette } from "./CommandPalette";
@@ -12,13 +13,16 @@ import { Inspector } from "@/components/inspector/Inspector";
 import { useUI, WorkspaceProvider } from "@/components/workspace/state";
 import { cx } from "@/components/ui/cx";
 
+const CHAT_PANEL_ID = "workspace-chat";
+const ChatPanel = dynamic(() => import("@/components/chat/ChatPanel").then((module) => module.ChatPanel), { ssr: false });
+
 function isTyping(el: EventTarget | null) {
   const t = el as HTMLElement | null;
   if (!t) return false;
   return t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName);
 }
 
-function KeyboardShortcuts() {
+function KeyboardShortcuts({ inspectorModal }: { inspectorModal: boolean }) {
   const router = useRouter();
   const { setPaletteOpen, paletteOpen, inspect, setShortcutsOpen } = useUI();
   const rail = useRail();
@@ -27,13 +31,14 @@ function KeyboardShortcuts() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (inspectorModal || document.querySelector("dialog:modal")) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen(!paletteOpen);
         return;
       }
       if (paletteOpen || isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (document.querySelector("dialog[open]")) return;
+      if (e.target instanceof HTMLElement && e.target.closest(`#${CHAT_PANEL_ID}`)) return;
       const k = e.key.toLowerCase();
       const now = Date.now();
       if (chord.current && now - chord.current.at < 1200 && chord.current.key === "g") {
@@ -65,7 +70,7 @@ function KeyboardShortcuts() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, paletteOpen, setPaletteOpen, inspect, rail, theme, setShortcutsOpen]);
+  }, [router, paletteOpen, setPaletteOpen, inspect, rail, theme, setShortcutsOpen, inspectorModal]);
 
   return null;
 }
@@ -168,27 +173,58 @@ function ShortcutsDialog() {
   );
 }
 
+// Match the inspector's xl breakpoint, where it switches from overlay to side panel.
+const inspectorOverlay = () => window.matchMedia("(width < 80rem)");
+function subscribeInspectorOverlay(callback: () => void) {
+  const query = inspectorOverlay();
+  query.addEventListener("change", callback);
+  return () => query.removeEventListener("change", callback);
+}
+
 function Frame({ children }: { children: ReactNode }) {
-  const { inspector } = useUI();
+  const { inspector, navOpen, paletteOpen } = useUI();
+  const [chatOpen, setChatOpen] = useState<boolean | null>(null);
+  const chatPanelId = chatOpen === null ? undefined : CHAT_PANEL_ID;
+  const overlay = useSyncExternalStore(subscribeInspectorOverlay, () => inspectorOverlay().matches, () => false);
+  const inspectorModal = overlay && (inspector?.kind.includes("equity") ?? false);
   return (
     <div className="flex min-h-dvh bg-paper">
-      <a href="#main" className="sr-only z-[80] rounded-[3px] bg-pen px-3 py-2 text-white focus:not-sr-only focus:fixed focus:top-2 focus:left-2">
+      <a href="#main" inert={inspectorModal} className="sr-only z-[80] rounded-[3px] bg-pen px-3 py-2 text-white focus:not-sr-only focus:fixed focus:top-2 focus:left-2">
         Skip to content
       </a>
-      <Sidebar />
+      <div className="contents" inert={inspectorModal}>
+        <Sidebar chatOpen={chatOpen === true} chatPanelId={chatPanelId} onToggleChat={() => setChatOpen((open) => !open)} />
+      </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
+        <div className="contents" inert={inspectorModal}><Topbar /></div>
         <div className="flex min-w-0 flex-1">
-          <main id="main" className={cx("min-w-0 flex-1 pb-16", inspector && "xl:pr-0")}>
+          <main id="main" inert={inspectorModal} className={cx("min-w-0 flex-1 pb-16", inspector && "xl:pr-0")}>
             {children}
           </main>
-          <Inspector />
+          <Inspector modal={inspectorModal} />
         </div>
       </div>
+      <button
+        type="button"
+        data-noprint
+        inert={navOpen || paletteOpen || (overlay && !!inspector)}
+        className="btn btn-primary fixed top-[calc(100dvh-max(1rem,env(safe-area-inset-bottom)))] left-[calc(100vw-1rem)] z-[25] h-11 -translate-full gap-2 rounded-full px-4 text-base shadow-[var(--shadow-pop)] md:hidden"
+        aria-haspopup="dialog"
+        aria-controls={chatPanelId}
+        aria-expanded={chatOpen === true}
+        onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          setChatOpen(true);
+        }}
+      >
+        <MessageCircle size={18} aria-hidden />
+        Ask AI
+      </button>
+      {chatOpen !== null && <ChatPanel id={CHAT_PANEL_ID} open={chatOpen} onClose={() => setChatOpen(false)} />}
       <CommandPalette />
       <ShortcutsDialog />
       <Toasts />
-      <KeyboardShortcuts />
+      <KeyboardShortcuts inspectorModal={inspectorModal} />
     </div>
   );
 }
