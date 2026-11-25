@@ -1,0 +1,19 @@
+{
+  "name": "@myfinancespace/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Platform-free domain core shared by the web, iOS and Android apps: types, rules, calculations and formatting.",
+  "exports": {
+    "./data": "./src/data/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "eslint": "^9",
+    "typescript": "^5",
+    "typescript-eslint": "^8"
+  }
+}

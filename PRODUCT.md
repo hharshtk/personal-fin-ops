@@ -14,7 +14,7 @@ Single-person workspace. Joint/household ownership is out of scope for Phase 1 b
 
 ## Product Purpose
 
-Arthashala is a personal financial operating system: one connected workstation where the user understands their complete financial position (cash, assets, liabilities, net worth), monitors commitments (EMIs, card dues, bills, premiums, SIPs), manages spending against budgets, tracks investments and goals, and sees what needs attention next.
+MyFinanceSpace is a personal financial operating system: one connected workstation where the user understands their complete financial position (cash, assets, liabilities, net worth), monitors commitments (EMIs, card dues, bills, premiums, SIPs), manages spending against budgets, tracks investments and goals, and sees what needs attention next.
 
 Success: on opening the app, the user can answer within seconds "Where do I stand?", "What changed?", and "What needs my attention?", then drill into any figure to the records behind it without losing their place.
 
@@ -39,7 +39,8 @@ Not an expense tracker, budgeting app, or investment dashboard alone: every doma
 
 ## Brand Commitments
 
-- Product name: **Arthashala** (confirmed by the user).
+- Product name: **MyFinanceSpace** (confirmed by the user).
+- Domain: `myfinancespace.com`.
 - Voice: plain, precise, financial vocabulary the user already uses; no hype, no gamification.
 
 ## Evidence on Hand

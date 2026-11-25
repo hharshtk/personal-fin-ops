@@ -1,0 +1,19 @@
+{
+  // CONSTITUTION.md, Article 1: the core runs in Node, browsers and Hermes.
+  // `lib` has no DOM and `types` loads no @types packages, so `window`,
+  // `document`, `localStorage`, `process` and `fs` fail the type check here.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}

@@ -1,13 +1,15 @@
-<!-- BEGIN:nextjs-agent-rules -->
+## Repository layout
 
-## This is NOT the Next.js you know
+An npm-workspaces monorepo. Run `npm install` and the scripts below from this folder.
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+| Path | What it is | Agent rules |
+|---|---|---|
+| `apps/web/` | Next.js web app. It also serves the HTTP API under `/api/v1`. | [apps/web/AGENTS.md](apps/web/AGENTS.md) |
+| `apps/mobile/` | Expo (React Native) app: one codebase for iOS and Android. | [apps/mobile/AGENTS.md](apps/mobile/AGENTS.md) |
+| `packages/core/` | `@myfinancespace/core`, the platform-free domain core both apps import. | [CONSTITUTION.md](CONSTITUTION.md), Article 1 |
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+Before finishing a change, run `npm run typecheck` and `npm run lint` here. Both cover every workspace, and the core's checks enforce Article 1.
 
 ## Mobile compatibility is a requirement
 
-Read [CONSTITUTION.md](CONSTITUTION.md) before you change code. Arthashala will ship iOS and Android apps that share this product's records, API and domain core. Every change must keep that possible. Before finishing a change, go through the constitution's checklist. If you have to break an article, say which one in your summary and add a row to its gaps table. Never break one silently.
+Read [CONSTITUTION.md](CONSTITUTION.md) before you change code. MyFinanceSpace will ship iOS and Android apps that share this product's records, API and domain core. Every change must keep that possible. Before finishing a change, go through the constitution's checklist. If you have to break an article, say which one in your summary and add a row to its gaps table. Never break one silently.
