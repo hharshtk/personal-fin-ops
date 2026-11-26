@@ -184,27 +184,27 @@ Copy into the PR description, or have your agent go through it before finishing.
 - The Expo app in `apps/mobile/` imports the core unchanged, and its Android bundle compiles to Hermes bytecode (`npx expo export --platform android`).
 - The core uses a fixed currency list ([currencies.ts](packages/core/src/currencies.ts)) instead of `Intl.supportedValuesOf`, which Hermes lacks. This closed G7.
 - `packages/core/src/types.ts` describes records the way an API would return them. Dates are ISO strings handled in UTC.
+- Transaction filters, totals and validation ([transactions.ts](packages/core/src/transactions.ts)), and the session ledger ([session-ledger.ts](packages/core/src/session-ledger.ts)) live in the core and both apps use them. New transactions get a UUIDv7 ([ids.ts](packages/core/src/ids.ts)), and deleting a payment makes its bill unpaid again. This closed G1.
 - Payment settlement is pure and React-free, and it follows the plan-then-commit split (`packages/core/src/payments.ts`).
 - Employee-equity validation lives in the core.
 - Chat runs through a swappable `ChatTransport`.
 - Components contain no hard-coded hex colours, and tokens already have semantic names.
+- Colour, type and radius tokens live in [tokens.json](packages/tokens/tokens.json), which generates the web CSS and the app's values. `npm run typecheck` fails if the generated files are out of date. This closed G12.
 - Theme, density and rail state are stored per device.
 
 **Gaps to close.** Fix each one the next time you touch that code. All must be closed before the first API endpoint ships.
 
 | # | Gap | Article | Where |
 |---|---|---|---|
-| G1 | Manual transaction ids come from a module-level counter (`m001`, `m002`…). They reset on reload and would collide across devices. | 6 | [state.tsx:116](apps/web/src/components/workspace/state.tsx#L116), [state.tsx:159](apps/web/src/components/workspace/state.tsx#L159) |
 | G2 | Occurrence ids are built as `<commitmentId>@<date>`, and `entityName` reads the commitment back out with `split("@")`. | 6 | [ledger.ts:370](packages/core/src/data/ledger.ts#L370), [index.ts:545](packages/core/src/data/index.ts#L545) |
-| G3 | Domain rules sit in views: card statement status, transaction type groups and internal-transfer checks, and period ranges. The FY-to-date filter hard-codes April and ignores the `fyStartMonth` preference. "Month N of 12" is hard-coded too. | 2 | [CreditCards.tsx:41](apps/web/src/components/views/CreditCards.tsx#L41), [Transactions.tsx:34-68](apps/web/src/components/views/Transactions.tsx#L34-L68), [Overview.tsx:98](apps/web/src/components/views/Overview.tsx#L98) |
+| G3 | A domain rule sits in a view: card statement status. | 2 | [CreditCards.tsx:41](apps/web/src/components/views/CreditCards.tsx#L41) |
 | G4 | Selectors are synchronous, read fixtures at module level, and default their input to the fixture ledger (`txns = TRANSACTIONS`). A real API is asynchronous and per user. Split them into pure calculations that take their data as arguments, plus a data-access layer that fetches that data. | 1, 3 | [data/index.ts](packages/core/src/data/index.ts) |
 | G5 | Views import fixture arrays such as `CARDS`, `OCCURRENCES`, `GOALS` and `AS_OF` through `@myfinancespace/core/data`. They need to read through queries instead. | 3 | most of `apps/web/src/components/views/` |
 | G6 | Money is a JavaScript float in rupees, and equity rounding uses `toFixed`. | 6 | [types.ts](packages/core/src/types.ts), [employee-equity.ts](packages/core/src/employee-equity.ts) |
-| G8 | Policies, goals, assets, commitments and transactions have no URL of their own. `entityHref` falls back to the list page. | 8 | [index.ts:553](packages/core/src/data/index.ts#L553) |
+| G8 | Policies, goals, assets, commitments and transactions have no URL of their own. `entityHref` falls back to the list page. The mobile app gives transactions and bills the addresses `/transactions/<id>` and `/calendar/<occurrence id>`, plus `/transactions/new`, `/transactions/<id>/edit` and a `/more` tab. The web app has none of those yet, so a link shared from the phone does not open on the web. | 8 | [index.ts:553](packages/core/src/data/index.ts#L553) |
 | G9 | Records have no `createdAt`, `updatedAt` or `deletedAt`, and session deletes are hard deletes. | 6, 7 | [types.ts](packages/core/src/types.ts), [state.tsx](apps/web/src/components/workspace/state.tsx) |
 | G10 | Account-level preferences live in session-only React state and have no profile to sync to. | 11 | [state.tsx:12-32](apps/web/src/components/workspace/state.tsx#L12-L32) |
 | G11 | `POST /api/v1/transcriptions` (voice input) and `GET /api/v1/ai-credits` have no auth and no OpenAPI description. Anyone who can reach a deployment can spend AI Gateway credits and the Groq allowance through the first, and read the gateway balance through the second. Until bearer auth exists, keep deployments behind Vercel Deployment Protection. Add both endpoints to the OpenAPI document when that document is created. | 4 | [transcriptions](apps/web/src/app/api/v1/transcriptions/route.ts), [ai-credits](apps/web/src/app/api/v1/ai-credits/route.ts) |
-| G12 | The mobile app has no design tokens, so its placeholder screen uses platform defaults and a light-only theme. Before building the first real mobile screen, move the tokens to one platform-neutral source (JSON) that generates both the web CSS and the app's values. | 10 | [myfinancespace.css](apps/web/src/app/myfinancespace.css), [app.json](apps/mobile/app.json) |
 
 ---
 

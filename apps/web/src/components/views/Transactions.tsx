@@ -4,8 +4,9 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useState } from "react";
 import { Download, PenLine, Plus, SearchX, StickyNote, X } from "lucide-react";
 import type { Transaction } from "@myfinancespace/core/types";
-import { AS_OF, AS_OF_MONTH, CATEGORIES, amountFor, getCard, getCategory, ledgerAccountIds, ledgerAccountName, ledgerAccountShort, DATA_START_DATE } from "@myfinancespace/core/data";
-import { addDays, addMonths, formatDate, formatMoney, parts } from "@myfinancespace/core/format";
+import { AS_OF, CATEGORIES, getCard, getCategory, ledgerAccountIds, ledgerAccountName, ledgerAccountShort, DATA_START_DATE } from "@myfinancespace/core/data";
+import { formatDate, formatMoney } from "@myfinancespace/core/format";
+import { filterTransactions, periodRange, resolvePeriod, transactionTotals, viewAmount } from "@myfinancespace/core/transactions";
 import { useLedger, usePrefs, useUI } from "@/components/workspace/state";
 import { Money } from "@/components/ui/money";
 import { DateMark, EmptyState, PageHeader, Tag } from "@/components/ui/primitives";
@@ -29,44 +30,6 @@ const TYPES = [
   { id: "transfers", label: "Transfers & card bills" },
 ] as const;
 
-const MONTH_START = `${AS_OF_MONTH}-01`;
-/** Financial-year-to-date filters start in April. */
-const FY_START = `${parts(AS_OF).m >= 4 ? parts(AS_OF).y : parts(AS_OF).y - 1}-04-01`;
-
-function periodRange(period: string, from?: string | null, to?: string | null): [string, string] {
-  switch (period) {
-    case "last-month":
-      return [addMonths(MONTH_START, -1), addDays(MONTH_START, -1)];
-    case "90d":
-      return [addDays(AS_OF, -89), AS_OF];
-    case "fy":
-      return [FY_START, AS_OF];
-    case "all":
-      return [DATA_START_DATE, AS_OF];
-    case "custom":
-      return [from || DATA_START_DATE, to || AS_OF];
-    default:
-      return [MONTH_START, AS_OF];
-  }
-}
-
-function typeMatch(t: Transaction, type: string) {
-  switch (type) {
-    case "in":
-      return t.type === "income" || t.type === "dividend" || t.type === "interest" || t.type === "refund";
-    case "spending":
-      return t.type === "expense";
-    case "commitments":
-      return t.type === "emi" || t.type === "investment";
-    case "transfers":
-      return t.type === "transfer" || t.type === "card_payment";
-    default:
-      return true;
-  }
-}
-
-const isInternal = (t: Transaction) => t.type === "transfer" || t.type === "card_payment";
-
 export function TransactionExplorer() {
   const params = useSearchParams();
   const router = useRouter();
@@ -80,8 +43,9 @@ export function TransactionExplorer() {
   const category = params.get("category") ?? "";
   const account = params.get("account") ?? "";
   const type = params.get("type") ?? "all";
-  const period = params.get("period") ?? (category || account || q ? "all" : prefs.defaultTxnPeriod);
-  const [from, to] = periodRange(period, params.get("from"), params.get("to"));
+  const filter = { period: params.get("period") ?? undefined, accountId: account, categoryId: category, type, query: q };
+  const period = resolvePeriod(filter, prefs.defaultTxnPeriod);
+  const [from, to] = periodRange(period, { asOf: AS_OF, ledgerStart: DATA_START_DATE, fyStartMonth: prefs.fyStartMonth }, { from: params.get("from"), to: params.get("to") });
   const [draft, setDraft] = useState(q);
   const [syncedQ, setSyncedQ] = useState(q);
   if (q !== syncedQ) {
@@ -100,17 +64,8 @@ export function TransactionExplorer() {
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   };
 
-  const needle = q.trim().toLowerCase();
-  const rows = txns.filter(
-    (t) =>
-      t.date >= from &&
-      t.date <= to &&
-      (!category || t.categoryId === category) &&
-      (!account || t.accountId === account || t.counterpartyId === account) &&
-      typeMatch(t, type) &&
-      (!needle || t.description.toLowerCase().includes(needle) || (t.note ?? "").toLowerCase().includes(needle) || getCategory(t.categoryId).name.toLowerCase().includes(needle)),
-  );
-  const view = (t: Transaction) => (account ? amountFor(t, account) : t.amount);
+  const rows = filterTransactions(txns, filter, [from, to]);
+  const view = (t: Transaction) => viewAmount(t, account);
   const { sorted, sort, toggle } = useSort(
     rows,
     {
@@ -122,9 +77,7 @@ export function TransactionExplorer() {
     { key: "date", dir: "desc" },
   );
 
-  const counted = rows.filter((t) => account || !isInternal(t));
-  const moneyIn = counted.reduce((s, t) => s + Math.max(0, view(t)), 0);
-  const moneyOut = counted.reduce((s, t) => s + Math.min(0, view(t)), 0);
+  const { moneyIn, moneyOut, net, leavesOutInternal } = transactionTotals(rows, account);
   const selectedId = inspector?.kind === "transaction" ? inspector.id : null;
   const activeFilters = [
     category && { key: "category", label: getCategory(category).name },
@@ -267,12 +220,12 @@ export function TransactionExplorer() {
           <div className="flex gap-1.5">
             <dt className="text-ink-3">Net</dt>
             <dd>
-              <Money value={moneyIn + moneyOut} sign="always" tone="gain" className="num font-semibold" />
+              <Money value={net} sign="always" tone="gain" className="num font-semibold" />
             </dd>
           </div>
         </dl>
       </div>
-      {!account && rows.some(isInternal) && <p className="-mt-1 px-4 pb-2 text-xs text-ink-3 md:px-6">Transfers between your own accounts and card bill payments are listed but not counted as money in or out.</p>}
+      {leavesOutInternal && <p className="-mt-1 px-4 pb-2 text-xs text-ink-3 md:px-6">Transfers between your own accounts and card bill payments are listed but not counted as money in or out.</p>}
 
       {rows.length === 0 ? (
         <div className="border-t border-rule">

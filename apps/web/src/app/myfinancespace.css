@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Colour, type and radius values. Edit packages/tokens/tokens.json, not this import. */
+@import "@myfinancespace/tokens/tokens.css";
 
 /* ─────────────────────────────────────────────────────────────
    MyFinanceSpace — the calendar sheet.
@@ -11,51 +13,6 @@
 
 :root {
   color-scheme: light;
-  --paper: #ffffff;
-  --paper-2: #f6f7f9;
-  --paper-3: #eceef2;
-  --ground: #f1f2f5;
-  --ink: #191b22;
-  --ink-2: #4b5060;
-  --ink-3: #676c7c;
-  --rule: #e4e6eb;
-  --rule-2: #cdd1d9;
-
-  --pen: #2b3aa8;
-  --pen-2: #3d4cc0;
-  --pen-wash: #eef0fc;
-  --pen-wash-2: #e0e4fa;
-
-  --red: #c2202e;
-  --red-wash: #fdeeef;
-  --green: #17784a;
-  --green-wash: #e9f5ee;
-  --amber: #965500;
-  --amber-wash: #fdf2df;
-
-  --rail: #f6f7f9;
-  --rail-ink: #2b2f3a;
-  --rail-ink-2: #646a7a;
-  --rail-hover: #eceef2;
-  --rail-rule: #e4e6eb;
-
-  /* Data series — validated categorical order (dataviz validator, light on #fff) */
-  --c1: #00927e;
-  --c2: #d97a1e;
-  --c3: #1f86c7;
-  --c4: #b98b00;
-  --c5: #9a4fb5;
-  --c6: #4e8a2e;
-  --c-neutral: #9aa0ad;
-  --c-track: #eceef2;
-  /* Labels printed inside a series fill: whichever of white / near-black contrasts more */
-  --on-c1: #0b0c10;
-  --on-c2: #0b0c10;
-  --on-c3: #0b0c10;
-  --on-c4: #0b0c10;
-  --on-c5: #ffffff;
-  --on-c6: #0b0c10;
-
   --row-h: 36px;
   --row-pad: 8px;
   --shadow-pop: 0 12px 32px -8px rgb(20 24 40 / 0.22), 0 2px 6px rgb(20 24 40 / 0.08);
@@ -63,45 +20,6 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --paper: #15171e;
-  --paper-2: #1b1e27;
-  --paper-3: #252935;
-  --ground: #101218;
-  --ink: #e8eaf0;
-  --ink-2: #b0b5c3;
-  --ink-3: #8d93a4;
-  --rule: #2a2e3a;
-  --rule-2: #3b4050;
-
-  --pen: #a3adff;
-  --pen-2: #8f9bff;
-  --pen-wash: #232a52;
-  --pen-wash-2: #2d3566;
-
-  --red: #ff7b80;
-  --red-wash: #3a1d23;
-  --green: #55c78e;
-  --green-wash: #15302a;
-  --amber: #f1b24c;
-  --amber-wash: #33270f;
-
-  --rail: #101218;
-  --rail-ink: #d6d9e2;
-  --rail-ink-2: #8b91a1;
-  --rail-hover: #1b1e27;
-  --rail-rule: #23262f;
-
-  /* Data series — validated for the dark surface */
-  --c1: #12a08b;
-  --c2: #d57a2c;
-  --c3: #2f93d0;
-  --c4: #b08812;
-  --c5: #ac6bc8;
-  --c6: #5e9e3c;
-  --c-neutral: #6b7183;
-  --c-track: #262a36;
-  --on-c5: #0b0c10;
-
   --shadow-pop: 0 16px 40px -8px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
 }
 
@@ -143,28 +61,6 @@
   --color-c6: var(--c6);
 
   --font-sans: var(--font-anek), ui-sans-serif, system-ui, sans-serif;
-
-  --text-2xs: 0.6875rem;
-  --text-2xs--line-height: 0.875rem;
-  --text-xs: 0.75rem;
-  --text-xs--line-height: 1rem;
-  --text-sm: 0.8125rem;
-  --text-sm--line-height: 1.125rem;
-  --text-base: 0.875rem;
-  --text-base--line-height: 1.25rem;
-  --text-lg: 1rem;
-  --text-lg--line-height: 1.375rem;
-  --text-xl: 1.25rem;
-  --text-xl--line-height: 1.625rem;
-  --text-2xl: 1.5rem;
-  --text-2xl--line-height: 1.875rem;
-  --text-3xl: 2rem;
-  --text-3xl--line-height: 2.25rem;
-
-  --radius-xs: 2px;
-  --radius-sm: 3px;
-  --radius-md: 5px;
-  --radius-lg: 8px;
 }
 
 /* ───────────── Base & browser surfaces ───────────── */

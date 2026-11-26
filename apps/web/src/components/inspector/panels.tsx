@@ -11,7 +11,6 @@ import {
   budgetFor,
   CATEGORIES,
   cardStatus,
-  cardBillPayments,
   entityHref,
   getAccount,
   getAsset,
@@ -39,7 +38,8 @@ import {
 import { diffDays, durationLabel, formatDate, formatMonth, monthOf, monthsBetween, relativeDays } from "@myfinancespace/core/format";
 import { useLedger, useUI } from "@/components/workspace/state";
 import { usePayOccurrence } from "@/components/workspace/actions";
-import { effectiveStatus } from "@myfinancespace/core/payments";
+import { earlierOccurrences, effectiveStatus, paymentFor } from "@myfinancespace/core/payments";
+import { canEditTransaction } from "@myfinancespace/core/transactions";
 import { Money, Pct } from "@/components/ui/money";
 import { BudgetMeter, DateMark, Facts, OccurrenceTag, Progress, Tag } from "@/components/ui/primitives";
 import { cx } from "@/components/ui/cx";
@@ -153,7 +153,8 @@ export function TransactionInspector({ id }: { id: string }) {
               : []),
             ...(t.link ? ([["Linked to", <RefLink key="l" target={t.link}>{entityName(t.link)}</RefLink>]] as [ReactNode, ReactNode][]) : []),
             ["Status", t.status === "cleared" ? "Cleared" : "Pending"],
-            ["Reference", <span key="r" className="num text-ink-2">{t.id.toUpperCase()}</span>],
+            // Only bank entries have a reference worth quoting.
+            ...(manual ? [] : ([["Reference", <span key="r" className="num text-ink-2">{t.id.toUpperCase()}</span>]] as [ReactNode, ReactNode][])),
           ]}
         />
       </Block>
@@ -189,9 +190,11 @@ export function TransactionInspector({ id }: { id: string }) {
       {manual && (
         <Block>
           <div className="flex gap-2">
-            <button type="button" className="btn btn-sm" onClick={() => inspect({ kind: "edit-transaction", id: t.id })}>
-              <Pencil size={13} aria-hidden /> Edit
-            </button>
+            {canEditTransaction(t) && (
+              <button type="button" className="btn btn-sm" onClick={() => inspect({ kind: "edit-transaction", id: t.id })}>
+                <Pencil size={13} aria-hidden /> Edit
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-sm btn-danger"
@@ -682,10 +685,8 @@ export function OccurrenceInspector({ id }: { id: string }) {
   if (!occ) return <Head title="Bill not found" />;
   const c = getCommitment(occ.commitmentId)!;
   const eff = effectiveStatus(occ, paidOccurrences);
-  const history = OCCURRENCES.filter((o) => o.commitmentId === c.id && o.date < occ.date).slice(-4).reverse();
-  const paidTxn = c.kind === "card" && c.link
-    ? cardBillPayments(occ.id, c.link.id, txns)[0]
-    : occ.txnId ? txns.find((t) => t.id === occ.txnId) : txns.find((t) => t.source === "manual" && t.occurrenceId === occ.id);
+  const history = earlierOccurrences(occ);
+  const paidTxn = paymentFor(occ, txns);
 
   return (
     <div>

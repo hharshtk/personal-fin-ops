@@ -1,61 +1,37 @@
 "use client";
 
 import { useId, useState, type FormEvent } from "react";
-import type { PaymentMethod, Transaction, TxnType } from "@myfinancespace/core/types";
-import { AS_OF, CARDS, CASH_ACCOUNTS, CATEGORIES, DATA_START_DATE, ledgerAccountName } from "@myfinancespace/core/data";
+import type { PaymentMethod, Transaction } from "@myfinancespace/core/types";
+import { AS_OF, DATA_START_DATE, ledgerAccountName } from "@myfinancespace/core/data";
 import { formatMoney } from "@myfinancespace/core/format";
+import {
+  DRAFT_METHODS,
+  draftAccountIds,
+  draftAmount,
+  draftCategories,
+  planTransaction,
+  transactionDraft,
+  validateTransactionDraft,
+  withDraftKind,
+  type TransactionDraft,
+  type TransactionDraftErrors,
+} from "@myfinancespace/core/transactions";
 import { useLedger, useUI } from "@/components/workspace/state";
 import { cx } from "@/components/ui/cx";
-
-type Kind = "expense" | "income" | "transfer";
-
-const LEDGER_ACCOUNTS = [
-  ...CASH_ACCOUNTS.filter((a) => a.kind === "savings" || a.kind === "cash").map((a) => ({ id: a.id, label: ledgerAccountName(a.id) })),
-  ...CARDS.map((c) => ({ id: c.id, label: ledgerAccountName(c.id) })),
-];
-const METHODS: PaymentMethod[] = ["UPI", "Card", "Netbanking", "NEFT", "IMPS", "Cash", "Auto-debit"];
-
-function kindOf(t?: Partial<Transaction>): Kind {
-  if (!t?.type) return "expense";
-  if (t.type === "income" || t.type === "interest" || t.type === "dividend" || t.type === "refund") return "income";
-  if (t.type === "transfer" || t.type === "card_payment") return "transfer";
-  return "expense";
-}
 
 export function TransactionForm({ editId, preset }: { editId?: string; preset?: Partial<Transaction> }) {
   const { txns, addTxn, updateTxn } = useLedger();
   const { inspect, closeInspector, toast } = useUI();
   const existing = editId ? txns.find((t) => t.id === editId) : undefined;
-  const base = existing ?? preset;
   const uid = useId();
 
-  const [kind, setKind] = useState<Kind>(kindOf(base));
-  const [amount, setAmount] = useState(base?.amount ? String(Math.abs(base.amount)) : "");
-  const [date, setDate] = useState(base?.date ?? AS_OF);
-  const [description, setDescription] = useState(base?.description ?? "");
-  const [categoryId, setCategoryId] = useState(base?.categoryId ?? (kindOf(base) === "income" ? "freelance" : "groceries"));
-  const [accountId, setAccountId] = useState(base?.accountId ?? "icici-sb");
-  const [toAccount, setToAccount] = useState(base?.counterpartyId ?? "idfc-sb");
-  const [method, setMethod] = useState<PaymentMethod>(base?.method ?? "UPI");
-  const [note, setNote] = useState(base?.note ?? "");
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState(() => transactionDraft(AS_OF, existing ?? preset));
+  const { kind, amount, date, description, categoryId, accountId, toAccountId, method, note } = draft;
+  const set = (patch: Partial<TransactionDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const [errors, setErrors] = useState<TransactionDraftErrors>({});
   const [submitted, setSubmitted] = useState(false);
 
-  const cats = CATEGORIES.filter((c) => (kind === "income" ? c.group === "income" : c.group === "essentials" || c.group === "lifestyle"));
-
-  function validate() {
-    const e: Record<string, string> = {};
-    const n = Number(amount.replace(/,/g, ""));
-    if (!amount.trim()) e.amount = "Enter an amount.";
-    else if (!Number.isFinite(n) || n <= 0) e.amount = "Amount must be a number greater than zero.";
-    else if (n > 1e8) e.amount = "That's more than ₹10 crore. Check the amount.";
-    if (!description.trim() && kind !== "transfer") e.description = "Add who you paid or who paid you.";
-    if (!date) e.date = "Pick a date.";
-    else if (date > AS_OF) e.date = `Date can't be after ${AS_OF.split("-").reverse().join("-")}, the data's as-of date.`;
-    else if (date < DATA_START_DATE) e.date = "The demo ledger starts on 01 May 2026.";
-    if (kind === "transfer" && toAccount === accountId) e.toAccount = "Choose a different account to move money to.";
-    return e;
-  }
+  const validate = () => validateTransactionDraft(draft, { asOf: AS_OF, ledgerStart: DATA_START_DATE });
 
   function submit(ev: FormEvent) {
     ev.preventDefault();
@@ -67,19 +43,7 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
       document.getElementById(`${uid}-${first}`)?.focus();
       return;
     }
-    const n = Math.round(Number(amount.replace(/,/g, "")) * 100) / 100;
-    const type: TxnType = kind === "income" ? "income" : kind === "transfer" ? "transfer" : "expense";
-    const payload = {
-      date,
-      description: description.trim() || `To ${ledgerAccountName(toAccount, { withMask: false })}`,
-      amount: kind === "income" ? n : -n,
-      type,
-      categoryId: kind === "transfer" ? "transfer" : categoryId,
-      accountId,
-      counterpartyId: kind === "transfer" ? toAccount : undefined,
-      method,
-      note: note.trim() || undefined,
-    };
+    const payload = planTransaction(draft);
     if (existing) {
       updateTxn(existing.id, payload);
       toast({ message: "Transaction saved", tone: "success" });
@@ -92,7 +56,7 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
   }
 
   const live = submitted ? validate() : errors;
-  const err = (k: string) => live[k];
+  const err = (k: keyof TransactionDraftErrors) => live[k];
 
   return (
     <form onSubmit={submit} noValidate className="px-5 py-4">
@@ -100,16 +64,8 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
       <p className="mt-1 text-sm text-ink-3">For cash spends and anything your bank statement doesn&apos;t show. It stays in this session only.</p>
 
       <div className="seg mt-4" role="group" aria-label="Transaction type">
-        {(["expense", "income", "transfer"] as Kind[]).map((k) => (
-          <button
-            key={k}
-            type="button"
-            aria-pressed={kind === k}
-            onClick={() => {
-              setKind(k);
-              setCategoryId(k === "income" ? "freelance" : "groceries");
-            }}
-          >
+        {(["expense", "income", "transfer"] as const).map((k) => (
+          <button key={k} type="button" aria-pressed={kind === k} onClick={() => setDraft((d) => withDraftKind(d, k))}>
             {k === "expense" ? "Money out" : k === "income" ? "Money in" : "Transfer"}
           </button>
         ))}
@@ -127,12 +83,12 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
             autoComplete="off"
             placeholder="0"
             value={amount}
-            onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ""))}
+            onChange={(e) => set({ amount: e.target.value.replace(/[^\d.,]/g, "") })}
             aria-invalid={Boolean(err("amount"))}
             aria-describedby={err("amount") ? `${uid}-amount-err` : undefined}
             autoFocus
           />
-          {amount && !err("amount") && <p className="mt-1 text-xs text-ink-3">{formatMoney(Number(amount.replace(/,/g, "")) || 0)}</p>}
+          {amount && !err("amount") && <p className="mt-1 text-xs text-ink-3">{formatMoney(draftAmount(draft) || 0)}</p>}
           {err("amount") && (
             <p id={`${uid}-amount-err`} className="mt-1 text-xs text-red">
               {err("amount")}
@@ -150,7 +106,7 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
             value={date}
             min={DATA_START_DATE}
             max={AS_OF}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => set({ date: e.target.value })}
             aria-invalid={Boolean(err("date"))}
             aria-describedby={err("date") ? `${uid}-date-err` : undefined}
           />
@@ -170,7 +126,7 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
             className="input"
             placeholder={kind === "income" ? "e.g. Lumen Labs" : kind === "transfer" ? "e.g. Top up emergency fund" : "e.g. Sunday market · vegetables"}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => set({ description: e.target.value })}
             aria-invalid={Boolean(err("description"))}
             aria-describedby={err("description") ? `${uid}-description-err` : undefined}
           />
@@ -185,10 +141,10 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
           <label className="field-label" htmlFor={`${uid}-account`}>
             {kind === "income" ? "Into account" : "From account"}
           </label>
-          <select id={`${uid}-account`} className="select" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-            {LEDGER_ACCOUNTS.filter((a) => kind !== "income" || !a.id.endsWith("-cc")).map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.label}
+          <select id={`${uid}-account`} className="select" value={accountId} onChange={(e) => set({ accountId: e.target.value })}>
+            {draftAccountIds(kind).map((id) => (
+              <option key={id} value={id}>
+                {ledgerAccountName(id)}
               </option>
             ))}
           </select>
@@ -202,14 +158,14 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
             <select
               id={`${uid}-toAccount`}
               className="select"
-              value={toAccount}
-              onChange={(e) => setToAccount(e.target.value)}
+              value={toAccountId}
+              onChange={(e) => set({ toAccountId: e.target.value })}
               aria-invalid={Boolean(err("toAccount"))}
               aria-describedby={err("toAccount") ? `${uid}-toAccount-err` : undefined}
             >
-              {LEDGER_ACCOUNTS.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
+              {draftAccountIds(kind).map((id) => (
+                <option key={id} value={id}>
+                  {ledgerAccountName(id)}
                 </option>
               ))}
             </select>
@@ -224,8 +180,8 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
             <label className="field-label" htmlFor={`${uid}-category`}>
               Category
             </label>
-            <select id={`${uid}-category`} className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              {cats.map((c) => (
+            <select id={`${uid}-category`} className="select" value={categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
+              {draftCategories(kind).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
@@ -238,8 +194,8 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
           <label className="field-label" htmlFor={`${uid}-method`}>
             Paid by
           </label>
-          <select id={`${uid}-method`} className="select" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
-            {METHODS.map((m) => (
+          <select id={`${uid}-method`} className="select" value={method} onChange={(e) => set({ method: e.target.value as PaymentMethod })}>
+            {DRAFT_METHODS.map((m) => (
               <option key={m}>{m}</option>
             ))}
           </select>
@@ -249,7 +205,7 @@ export function TransactionForm({ editId, preset }: { editId?: string; preset?: 
           <label className="field-label" htmlFor={`${uid}-note`}>
             Note
           </label>
-          <textarea id={`${uid}-note`} className="input min-h-14" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+          <textarea id={`${uid}-note`} className="input min-h-14" value={note} onChange={(e) => set({ note: e.target.value })} placeholder="Optional" />
         </div>
       </div>
 

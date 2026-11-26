@@ -5,7 +5,18 @@ import type { NumberSystem } from "@myfinancespace/core/format";
 import type { EntityRef, EquityActivity, EquityMarketInput, EquityPlan, EquityPlanKind, Transaction } from "@myfinancespace/core/types";
 import { EQUITY_MARKET_INPUTS, EQUITY_PLANS, TRANSACTIONS } from "@myfinancespace/core/data";
 import { upsertEquityInput, upsertEquityPlan } from "@myfinancespace/core/employee-equity";
+import { uuidv7 } from "@myfinancespace/core/ids";
 import { paidOccurrenceIds } from "@myfinancespace/core/payments";
+import {
+  EMPTY_SESSION,
+  createTransaction,
+  deleteTransaction,
+  manualTransaction,
+  restoreTransaction,
+  sessionChangeCount,
+  sessionTransactions,
+  updateTransaction,
+} from "@myfinancespace/core/session-ledger";
 import { TRANSCRIPTION_DEFAULT_MODEL } from "@myfinancespace/core/transcription";
 
 /* ───────────── Preferences (session only) ───────────── */
@@ -52,8 +63,6 @@ interface LedgerCtx {
   deleteTxn: (id: string) => void;
   restoreTxn: (t: Transaction) => void;
   paidOccurrences: Set<string>;
-  markPaid: (occurrenceId: string) => void;
-  unmarkPaid: (occurrenceId: string) => void;
   sessionChanges: number;
   resetSession: () => void;
 }
@@ -113,7 +122,6 @@ interface UICtx {
 const UIContext = createContext<UICtx | null>(null);
 
 let toastSeq = 0;
-let manualSeq = 0;
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [equitySession, setEquitySession] = useState(BASE_EQUITY);
@@ -138,53 +146,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
   const resetPrefs = useCallback(() => setPrefs(DEFAULT_PREFS), []);
 
-  const [added, setAdded] = useState<Transaction[]>([]);
-  const [edits, setEdits] = useState<Record<string, Partial<Transaction>>>({});
-  const [deleted, setDeleted] = useState<Set<string>>(() => new Set());
-  const [markedPaid, setPaid] = useState<Set<string>>(() => new Set());
-
-  const txns = useMemo(() => {
-    const base = TRANSACTIONS.filter((t) => !deleted.has(t.id)).map((t) => (edits[t.id] ? { ...t, ...edits[t.id] } : t));
-    const extra = added.filter((t) => !deleted.has(t.id)).map((t) => (edits[t.id] ? { ...t, ...edits[t.id] } : t));
-    return [...base, ...extra].sort((a, b) => (a.date === b.date ? (a.id < b.id ? 1 : -1) : a.date < b.date ? 1 : -1));
-  }, [added, edits, deleted]);
-
-  const paidOccurrences = useMemo(() => paidOccurrenceIds(markedPaid, txns), [markedPaid, txns]);
+  const [session, setSession] = useState(EMPTY_SESSION);
+  const txns = useMemo(() => sessionTransactions(session, TRANSACTIONS), [session]);
+  const paidOccurrences = useMemo(() => paidOccurrenceIds(txns), [txns]);
 
   const ledger = useMemo<LedgerCtx>(
     () => ({
       txns,
       addTxn: (t) => {
-        manualSeq += 1;
-        const txn: Transaction = { ...t, id: `m${String(manualSeq).padStart(3, "0")}`, source: "manual", status: "cleared" };
-        setAdded((a) => [...a, txn]);
+        const txn = manualTransaction(uuidv7(Date.now(), crypto.getRandomValues(new Uint8Array(10))), t);
+        setSession((s) => createTransaction(s, txn));
         return txn;
       },
-      updateTxn: (id, patch) => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } })),
-      deleteTxn: (id) => setDeleted((s) => new Set(s).add(id)),
-      restoreTxn: (t) =>
-        setDeleted((s) => {
-          const n = new Set(s);
-          n.delete(t.id);
-          return n;
-        }),
+      updateTxn: (id, patch) => setSession((s) => updateTransaction(s, id, patch)),
+      deleteTxn: (id) => setSession((s) => deleteTransaction(s, id)),
+      restoreTxn: (t) => setSession((s) => restoreTransaction(s, t.id)),
       paidOccurrences,
-      markPaid: (id) => setPaid((s) => new Set(s).add(id)),
-      unmarkPaid: (id) =>
-        setPaid((s) => {
-          const n = new Set(s);
-          n.delete(id);
-          return n;
-        }),
-      sessionChanges: added.length + Object.keys(edits).length + deleted.size + markedPaid.size,
-      resetSession: () => {
-        setAdded([]);
-        setEdits({});
-        setDeleted(new Set());
-        setPaid(new Set());
-      },
+      sessionChanges: sessionChangeCount(session),
+      resetSession: () => setSession(EMPTY_SESSION),
     }),
-    [txns, paidOccurrences, added.length, edits, deleted.size, markedPaid.size],
+    [txns, paidOccurrences, session],
   );
 
   const [stack, setStack] = useState<InspectTarget[]>([]);

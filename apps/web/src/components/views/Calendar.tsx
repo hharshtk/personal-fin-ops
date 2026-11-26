@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Repeat2 } from "lucide-react";
 import type { CommitmentKind, ISODate, MonthKey } from "@myfinancespace/core/types";
-import { AS_OF, AS_OF_MONTH, CALENDAR_MONTHS, COMMITMENTS, OCCURRENCES, getCategory, getCommitment, ledgerAccountShort, remainingBillAmount } from "@myfinancespace/core/data";
+import { AS_OF, AS_OF_MONTH, CALENDAR_MONTHS, COMMITMENTS, OCCURRENCES, getCategory, getCommitment, ledgerAccountShort } from "@myfinancespace/core/data";
 import { diffDays, formatDate, formatMonth, relativeDays } from "@myfinancespace/core/format";
 import { useLedger, usePrefs, useUI } from "@/components/workspace/state";
 import { usePayOccurrence } from "@/components/workspace/actions";
-import { effectiveStatus } from "@myfinancespace/core/payments";
+import { billFor, billSummary, needsPayment } from "@myfinancespace/core/payments";
 import { Money } from "@/components/ui/money";
 import { DateMark, Metric, MetricStrip, OccurrenceTag, PageHeader, Section } from "@/components/ui/primitives";
 import { MonthSheet } from "@/components/calendar/MonthSheet";
@@ -38,21 +38,15 @@ export function CalendarView() {
 
   const match = KINDS.find((k) => k.id === kind)!.match;
   const occs = OCCURRENCES.filter((o) => match(getCommitment(o.commitmentId)!.kind));
-  const withStatus = occs.map((o) => {
-    const status = effectiveStatus(o, paidOccurrences);
-    return { o, ...status, amount: status.status === "paid" ? o.amount : remainingBillAmount(o, txns) };
-  });
+  const withStatus = occs.map((o) => billFor(o, txns, paidOccurrences));
   const inMonth = withStatus.filter((x) => x.o.date.startsWith(month));
-  const overdue = withStatus.filter((x) => x.status === "overdue");
-  const due30 = withStatus.filter((x) => x.status === "due" && diffDays(x.o.date, AS_OF) <= 30);
-  const auto30 = withStatus.filter((x) => x.status === "scheduled" && diffDays(x.o.date, AS_OF) <= 30);
-  const paidThisMonth = withStatus.filter((x) => x.status === "paid" && x.o.date.startsWith(AS_OF_MONTH));
-  const sum = (xs: typeof withStatus) => xs.reduce((s, x) => s + x.amount, 0);
+  const firstOverdue = withStatus.find((x) => x.status === "overdue");
+  const { overdue, due, autopay, paidThisMonth } = billSummary(withStatus, AS_OF);
   const side = day ? withStatus.filter((x) => x.o.date === day) : withStatus.filter((x) => x.o.date >= AS_OF && diffDays(x.o.date, AS_OF) <= 14 && x.status !== "paid");
 
   const Row = ({ x, compact = false }: { x: (typeof withStatus)[number]; compact?: boolean }) => {
     const c = getCommitment(x.o.commitmentId)!;
-    const red = x.status === "due" || x.status === "overdue";
+    const red = needsPayment(x);
     return (
       <div className={cx("flex items-center gap-3 border-b border-rule py-2 last:border-b-0", x.status === "overdue" && "bg-red-wash/60")}>
         <DateMark date={x.o.date} tone={red ? "due" : x.status === "paid" ? "muted" : "default"} className="w-[50px] shrink-0" />
@@ -78,10 +72,10 @@ export function CalendarView() {
     <div>
       <PageHeader title="Bills & calendar" meta="Every EMI, card bill, SIP, premium and subscription on one sheet" />
       <MetricStrip className="mt-4">
-        <Metric label="Overdue" value={<span className={overdue.length ? "text-red" : undefined}>{overdue.length}</span>} sub={overdue.length ? <Money value={sum(overdue)} /> : "Nothing late"} onClick={overdue[0] ? () => inspect({ kind: "commitment", id: overdue[0].o.id }) : undefined} />
-        <Metric label="Needs you, next 30 days" value={due30.length} sub={<><Money value={sum(due30)} /> to pay manually</>} />
-        <Metric label="Autopay, next 30 days" value={auto30.length} sub={<><Money value={sum(auto30)} /> will debit itself</>} />
-        <Metric label={`Paid in ${formatMonth(AS_OF_MONTH, "MMMM")}`} value={paidThisMonth.length} sub={<><Money value={sum(paidThisMonth)} /> cleared</>} />
+        <Metric label="Overdue" value={<span className={overdue.count ? "text-red" : undefined}>{overdue.count}</span>} sub={overdue.count ? <Money value={overdue.amount} /> : "Nothing late"} onClick={firstOverdue ? () => inspect({ kind: "commitment", id: firstOverdue.o.id }) : undefined} />
+        <Metric label="Needs you, next 30 days" value={due.count} sub={<><Money value={due.amount} /> to pay manually</>} />
+        <Metric label="Autopay, next 30 days" value={autopay.count} sub={<><Money value={autopay.amount} /> will debit itself</>} />
+        <Metric label={`Paid in ${formatMonth(AS_OF_MONTH, "MMMM")}`} value={paidThisMonth.count} sub={<><Money value={paidThisMonth.amount} /> cleared</>} />
       </MetricStrip>
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
@@ -164,7 +158,7 @@ export function CalendarView() {
             <tbody>
               {inMonth.map((x) => {
                 const c = getCommitment(x.o.commitmentId)!;
-                const red = x.status === "due" || x.status === "overdue";
+                const red = needsPayment(x);
                 return (
                   <tr key={x.o.id} data-clickable="true" onClick={() => inspect({ kind: "commitment", id: x.o.id })} className={cx(x.status === "overdue" && "bg-red-wash/60")}>
                     <td>

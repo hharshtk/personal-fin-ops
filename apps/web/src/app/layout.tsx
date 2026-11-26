@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Anek_Latin } from "next/font/google";
+import { color } from "@myfinancespace/tokens";
 import "./myfinancespace.css";
 import { AppShell } from "@/components/shell/AppShell";
 import { APPEARANCE_SCRIPT } from "@/components/shell/appearance-script";
@@ -22,8 +23,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#15171e" },
+    { media: "(prefers-color-scheme: light)", color: color.light.paper },
+    { media: "(prefers-color-scheme: dark)", color: color.dark.paper },
   ],
 };
 

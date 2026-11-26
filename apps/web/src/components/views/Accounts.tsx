@@ -14,7 +14,8 @@ import {
   CARDS,
   cardStatus,
 } from "@myfinancespace/core/data";
-import { addDays, addMonths, diffDays, formatDate, formatMonth, relativeDays, weekday } from "@myfinancespace/core/format";
+import { accountActivity, depositStatus, isDeposit } from "@myfinancespace/core/accounts";
+import { addDays, addMonths, countLabel, formatDate, formatMonth, relativeDays, weekday } from "@myfinancespace/core/format";
 import { useLedger, useUI } from "@/components/workspace/state";
 import { Money, Pct } from "@/components/ui/money";
 import { DateMark, EmptyState, Facts, Metric, MetricStrip, OccurrenceTag, PageHeader, Progress, Section } from "@/components/ui/primitives";
@@ -133,7 +134,7 @@ export function AccountsView() {
             </thead>
             <tbody>
               {deposits.map((a) => {
-                const soon = diffDays(a.maturityDate!, AS_OF) <= 30;
+                const soon = depositStatus(a, AS_OF)!.renewalSoon;
                 return (
                   <tr key={a.id} data-clickable="true" aria-selected={selected === a.id} onClick={() => inspect({ kind: "account", id: a.id })}>
                     <td>
@@ -191,14 +192,12 @@ export function AccountDetail({ id }: { id: string }) {
   const [range, setRange] = useState<"30" | "90" | "all">("90");
   const [q, setQ] = useState("");
   const a = CASH_ACCOUNTS.find((x) => x.id === id)!;
-  const deposit = a.kind === "fd" || a.kind === "rd";
+  const deposit = isDeposit(a);
   const ledger = accountLedger(id, txns);
   const balance = deposit ? a.balance : (ledger[0]?.balance ?? a.balance);
   const since = range === "all" ? "0000" : addDays(AS_OF, -Number(range) + 1);
   const rows = ledger.filter((r) => r.txn.date >= since && (!q || r.txn.description.toLowerCase().includes(q.toLowerCase())));
-  const last30 = ledger.filter((r) => r.txn.date >= addDays(AS_OF, -29));
-  const in30 = last30.reduce((s, r) => s + Math.max(0, r.amount), 0);
-  const out30 = last30.reduce((s, r) => s + Math.min(0, r.amount), 0);
+  const last30 = accountActivity(ledger, AS_OF);
   const selected = inspector?.kind === "transaction" ? inspector.id : null;
 
   // End-of-week balances for the trend
@@ -253,8 +252,8 @@ export function AccountDetail({ id }: { id: string }) {
         <>
           <MetricStrip className="mt-4">
             <Metric label="Balance" value={<Money value={balance} />} sub={`as of ${formatDate(AS_OF, "d MMM")}`} size="lg" />
-            <Metric label="In, last 30 days" value={<Money value={in30} sign="always" tone="flow" />} sub={`${last30.filter((r) => r.amount > 0).length} credits`} />
-            <Metric label="Out, last 30 days" value={<Money value={out30} />} sub={`${last30.filter((r) => r.amount < 0).length} debits`} />
+            <Metric label="In, last 30 days" value={<Money value={last30.moneyIn} sign="always" tone="flow" />} sub={countLabel(last30.credits, "credit")} />
+            <Metric label="Out, last 30 days" value={<Money value={last30.moneyOut} />} sub={countLabel(last30.debits, "debit")} />
             <Metric label="Interest" value={a.interestRate ? `${a.interestRate}%` : "None"} sub={a.interestRate ? "per year, credited quarterly" : "Cash earns nothing"} />
           </MetricStrip>
           {trend.length > 2 && (
@@ -334,7 +333,7 @@ function DepositDetail({ id }: { id: string }) {
         return { n: i + 1, date, paid: i < a.installmentsPaid! };
       })
     : [];
-  const elapsed = Math.max(0, Math.min(1, diffDays(AS_OF, a.openedOn) / diffDays(a.maturityDate!, a.openedOn)));
+  const { elapsed, interestSoFar, interestAtMaturity } = depositStatus(a, AS_OF)!;
   return (
     <>
       <MetricStrip className="mt-4">
@@ -354,8 +353,8 @@ function DepositDetail({ id }: { id: string }) {
             className="mt-4"
             items={[
               ["Principal", <Money key="p" value={a.principal!} />],
-              ["Interest earned so far", <Money key="i" value={a.balance - a.principal!} />],
-              ["Interest at maturity", <Money key="m" value={a.maturityAmount! - (isRd ? a.installment! * a.installmentsTotal! : a.principal!)} />],
+              ["Interest earned so far", <Money key="i" value={interestSoFar} />],
+              ["Interest at maturity", <Money key="m" value={interestAtMaturity} />],
               ["Earmarked for", goal ? goal.name : "Nothing yet"],
             ]}
           />

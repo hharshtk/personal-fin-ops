@@ -13,6 +13,7 @@
     "@ai-sdk/groq": "^3.0.84",
     "@ai-sdk/react": "^3.0.336",
     "@myfinancespace/core": "*",
+    "@myfinancespace/tokens": "*",
     "ai": "^6.0.333",
     "lucide-react": "^1.77.0",
     "next": "16.4.6",

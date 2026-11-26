@@ -11,6 +11,7 @@
     "start": "npm run start -w @myfinancespace/web",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "tokens": "npm run generate -w @myfinancespace/tokens",
     "mobile": "npm run start -w @myfinancespace/mobile --",
     "android": "npm run android -w @myfinancespace/mobile --",
     "ios": "npm run ios -w @myfinancespace/mobile --",

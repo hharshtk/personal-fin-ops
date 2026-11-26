@@ -164,6 +164,16 @@ export function monthOf(iso: ISODate): MonthKey {
   return iso.slice(0, 7);
 }
 
+/** The days of a month laid out in weeks, with nulls where a week runs past it. `weekStart` 0 is Sunday. */
+export function monthGrid(month: MonthKey, weekStart: 0 | 1 = 1): (ISODate | null)[] {
+  const first = `${month}-01`;
+  const { y, m } = parts(first);
+  const cells: (ISODate | null)[] = Array<ISODate | null>((weekday(first) - weekStart + 7) % 7).fill(null);
+  for (let d = 1; d <= daysInMonth(y, m); d++) cells.push(`${month}-${String(d).padStart(2, "0")}`);
+  while (cells.length % 7) cells.push(null);
+  return cells;
+}
+
 export function parts(iso: ISODate) {
   const [y, m, d] = iso.split("-").map(Number);
   return { y, m, d };
@@ -205,12 +215,22 @@ export function monthSpanLabel(from: MonthKey, to: MonthKey): string {
   return `${formatMonth(from, from.slice(0, 4) === to.slice(0, 4) ? "MMMM" : "MMMM yyyy")} to ${formatMonth(to, "MMMM yyyy")}`;
 }
 
+/** "1 credit", "29 credits". */
+export function countLabel(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
 /** Indian financial year label: FY 2026–27 for any date between Apr 2026 and Mar 2027 */
 export function fyLabel(iso: ISODate, startMonth = 4): string {
   const { y, m } = parts(iso);
   const start = m >= startMonth ? y : y - 1;
   if (startMonth === 1) return `FY ${start}`;
   return `FY ${start}–${String(start + 1).slice(2)}`;
+}
+
+/** Which month of the financial year a date falls in, from 1 to 12. */
+export function fyMonth(iso: ISODate, startMonth = 4): number {
+  return ((parts(iso).m - startMonth + 12) % 12) + 1;
 }
 
 export function relativeDays(iso: ISODate, asOf: ISODate): string {

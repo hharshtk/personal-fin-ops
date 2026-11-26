@@ -7,6 +7,7 @@ An npm-workspaces monorepo. Run `npm install` and the scripts below from this fo
 | `apps/web/` | Next.js web app. It also serves the HTTP API under `/api/v1`. | [apps/web/AGENTS.md](apps/web/AGENTS.md) |
 | `apps/mobile/` | Expo (React Native) app: one codebase for iOS and Android. | [apps/mobile/AGENTS.md](apps/mobile/AGENTS.md) |
 | `packages/core/` | `@myfinancespace/core`, the platform-free domain core both apps import. | [CONSTITUTION.md](CONSTITUTION.md), Article 1 |
+| `packages/tokens/` | `@myfinancespace/tokens`, the design tokens both apps use. Edit `tokens.json`, then run `npm run tokens`. | [CONSTITUTION.md](CONSTITUTION.md), Article 10 |
 
 Before finishing a change, run `npm run typecheck` and `npm run lint` here. Both cover every workspace, and the core's checks enforce Article 1.
 

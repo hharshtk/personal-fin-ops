@@ -3,7 +3,7 @@
 import { Check, Repeat2 } from "lucide-react";
 import type { ISODate, MonthKey, Occurrence, Transaction } from "@myfinancespace/core/types";
 import { AS_OF, getCommitment } from "@myfinancespace/core/data";
-import { daysInMonth, formatMoney, parts, weekday } from "@myfinancespace/core/format";
+import { formatMoney, monthGrid, parts } from "@myfinancespace/core/format";
 import { effectiveStatus } from "@myfinancespace/core/payments";
 import { usePrefs } from "@/components/workspace/state";
 import { cx } from "@/components/ui/cx";
@@ -59,11 +59,7 @@ export function MonthSheet({
   weekStart?: 0 | 1;
 }) {
   const { prefs } = usePrefs();
-  const { y, m } = parts(`${month}-01`);
-  const dim = daysInMonth(y, m);
-  const lead = (weekday(`${month}-01`) - weekStart + 7) % 7;
-  const cells: (ISODate | null)[] = [...Array(lead).fill(null), ...Array.from({ length: dim }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`)];
-  while (cells.length % 7) cells.push(null);
+  const cells = monthGrid(month, weekStart);
   const names = weekStart === 1 ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const max = density === "full" ? 4 : 2;
   const fmt = (v: number) => formatMoney(v, { compact: true, system: prefs.numberSystem, symbol: false });

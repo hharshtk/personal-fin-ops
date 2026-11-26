@@ -11,6 +11,7 @@ An npm-workspaces monorepo. Install and run everything from the repo root.
 | `apps/web/` | The Next.js web app. It also serves the HTTP API under `/api/v1`. |
 | `apps/mobile/` | The Expo (React Native) app. One TypeScript codebase builds both the Android and the iOS app. |
 | `packages/core/` | `@myfinancespace/core`: types, rules, calculations and formatting in plain TypeScript. Both apps import it, so the web and the phone always show the same figures. |
+| `packages/tokens/` | `@myfinancespace/tokens`: colours, type sizes, radii and spacing. `tokens.json` generates the web CSS and the mobile app's values. |
 
 ```bash
 npm install          # once, from the repo root: installs every app and package
@@ -18,6 +19,7 @@ npm run dev          # web app at http://localhost:4000 (PORT comes from apps/we
 npm run typecheck    # every workspace
 npm run lint         # every workspace
 npm run build        # production build of the web app
+npm run tokens       # rebuild the design-token outputs after editing packages/tokens/tokens.json
 ```
 
 ## Domain core (`packages/core`)
@@ -28,6 +30,9 @@ npm run build        # production build of the web app
 | `src/data/core.ts` | Fixture records: profile, accounts, cards, loans, holdings, assets, policies, goals, commitments. |
 | `src/data/ledger.ts` | Builds the seeded ledger (May to Nov 2026), card statements derived from card spends, and dated bill occurrences. |
 | `src/data/index.ts` | Read-side selectors (balances, loan status, net worth, budgets, attention items, entity names and links). The apps only read through these. |
+| `src/transactions.ts` | Transaction filters, periods and totals, and the drafts and validation behind the add form. |
+| `src/payments.ts` | Bill status, upcoming bills, and the rules for paying a bill. |
+| `src/session-ledger.ts` | The ledger with this session's additions, edits and deletions applied. |
 | `src/format.ts` | INR formatting (lakh/crore or million/billion, compact figures) and date helpers. Dates are plain ISO strings handled in UTC, so server, browser and phone render the same. |
 | `src/currencies.ts` | The fixed list of currency codes the app accepts. |
 
@@ -42,7 +47,7 @@ Apps import modules by name, for example `@myfinancespace/core/format` or `@myfi
 | `src/components/views/` | One client view per workspace. Route files in `src/app/**/page.tsx` stay thin. |
 | `src/components/calendar/MonthSheet.tsx` | The month calendar used on the overview and in Bills & calendar. |
 | `src/components/charts/` | Dependency-free charts (trend line, grouped/stacked columns, segmented bar). |
-| `src/app/myfinancespace.css` | Design tokens (light and dark), component classes, browser-surface theming. |
+| `src/app/myfinancespace.css` | Imports the design tokens; component classes, browser-surface theming. |
 | `src/app/api/v1/` | HTTP API route handlers. `transcriptions` turns a voice clip into text and reports its cost: Whisper on Groq by default (`GROQ_API_KEY`), or OpenAI and Google models through Vercel AI Gateway (`AI_GATEWAY_API_KEY`). `ai-credits` returns the gateway's credit balance. Keys go in `apps/web/.env.local` (see `apps/web/.env.example`). The supported models, their approximate prices and the request contract are in `packages/core/src/transcription.ts`. You choose the model in Settings › Voice input. |
 | `src/components/chat/` | Ask AI panel. Sample replies come from `preview-transport.ts`. The mic button records with `useDictation.ts`, which needs HTTPS or localhost. |
 
@@ -50,7 +55,7 @@ Apps import modules by name, for example `@myfinancespace/core/format` or `@myfi
 
 ## Mobile app (`apps/mobile`)
 
-Built with [Expo](https://docs.expo.dev/) SDK 58 and Expo Router. For now it has one placeholder screen: net worth, computed by the shared core, which matches the web Overview.
+Built with [Expo](https://docs.expo.dev/) SDK 58 and Expo Router. It has five tabs: Overview, Accounts (with a passbook for each account), Transactions (search, filter, add, edit, delete), Bills (month calendar, mark as paid) and More, which is a placeholder. Figures and rules come from the shared core, so they match the web. Changes last until the app closes.
 
 ### Try it on your phone (no Android Studio needed)
 

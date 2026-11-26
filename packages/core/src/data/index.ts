@@ -362,6 +362,14 @@ export function netWorthHistory(txns: Transaction[] = TRANSACTIONS) {
   }));
 }
 
+/** Net worth now against the end of the previous month. */
+export function netWorthChange(txns: Transaction[] = TRANSACTIONS): { amount: number; pct: number; sinceMonth: MonthKey } {
+  const hist = netWorthHistory(txns);
+  const prev = hist[hist.length - 2];
+  const amount = hist[hist.length - 1].netWorth - prev.netWorth;
+  return { amount, pct: (amount / prev.netWorth) * 100, sinceMonth: prev.month };
+}
+
 /* ───────────── Cash flow ───────────── */
 
 const PAST_FLOWS: MonthFlow[] = [

@@ -23,16 +23,16 @@ import {
   LOANS,
   monthFlows,
   monthRange,
+  netWorthChange,
   netWorthHistory,
   netWorthNow,
   OCCURRENCES,
   portfolioSummary,
-  remainingBillAmount,
 } from "@myfinancespace/core/data";
-import { addMonths, diffDays, formatDate, formatLongDate, formatMonth, fyLabel, monthOf, monthSpanLabel } from "@myfinancespace/core/format";
+import { addMonths, formatDate, formatLongDate, formatMonth, fyLabel, fyMonth, monthOf, monthSpanLabel } from "@myfinancespace/core/format";
 import { useLedger, usePrefs, useUI } from "@/components/workspace/state";
 import { usePayOccurrence } from "@/components/workspace/actions";
-import { effectiveStatus } from "@myfinancespace/core/payments";
+import { billFor, upcomingBills } from "@myfinancespace/core/payments";
 import { useAttentionAction } from "@/components/shell/Topbar";
 import { Money, Delta, Pct } from "@/components/ui/money";
 import { BudgetMeter, DateMark, OccurrenceTag, Progress, Section, SeverityIcon } from "@/components/ui/primitives";
@@ -65,8 +65,7 @@ export function Overview() {
 
   const nw = netWorthNow(txns);
   const hist = netWorthHistory(txns);
-  const prev = hist[hist.length - 2];
-  const change = nw.netWorth - prev.netWorth;
+  const change = netWorthChange(txns);
   const flows = monthFlows(txns);
   const nov = flows[flows.length - 1];
   const out = nov.spending + nov.emis + nov.invested;
@@ -79,13 +78,8 @@ export function Overview() {
   const portfolio = portfolioSummary();
   const recent = txns.filter((t) => t.date <= AS_OF).slice(0, 8);
   const incomes = txns.filter((t) => t.type === "income" || t.type === "dividend" || t.type === "interest");
-  const bills = OCCURRENCES.map((o) => {
-    const status = effectiveStatus(o, paidOccurrences);
-    return { o, ...status, amount: status.status === "paid" ? o.amount : remainingBillAmount(o, txns) };
-  });
-  const upcoming = bills.filter(({ o }) => o.date >= `${AS_OF_MONTH}-01` && diffDays(o.date, AS_OF) <= 10)
-    .filter((x) => x.status !== "paid" || paidOccurrences.has(x.o.id))
-    .slice(0, 8);
+  const bills = OCCURRENCES.map((o) => billFor(o, txns, paidOccurrences));
+  const upcoming = upcomingBills(txns, paidOccurrences);
   const dayEntries = day ? bills.filter(({ o }) => o.date === day) : [];
   const mi = CAL_RANGE.indexOf(month);
 
@@ -95,7 +89,7 @@ export function Overview() {
         <div>
           <h1 className="text-xl font-[650] tracking-[-0.01em]">Overview</h1>
           <p className="mt-0.5 text-sm text-ink-3">
-            {formatLongDate(AS_OF)} · {fyLabel(AS_OF, prefs.fyStartMonth)}, month {prefs.fyStartMonth === 4 ? 8 : 11} of 12
+            {formatLongDate(AS_OF)} · {fyLabel(AS_OF, prefs.fyStartMonth)}, month {fyMonth(AS_OF, prefs.fyStartMonth)} of 12
           </p>
         </div>
         <Link href="/financial-plan" className="btn">
@@ -117,7 +111,7 @@ export function Overview() {
               <Money value={nw.netWorth} compact="pref" />
             </Link>
             <span className="text-sm">
-              <Delta value={change} pct={(change / prev.netWorth) * 100} /> <span className="text-ink-3">{`since ${formatMonth(prev.month, "MMMM")}`}</span>
+              <Delta value={change.amount} pct={change.pct} /> <span className="text-ink-3">{`since ${formatMonth(change.sinceMonth, "MMMM")}`}</span>
             </span>
           </div>
           <TrendChart

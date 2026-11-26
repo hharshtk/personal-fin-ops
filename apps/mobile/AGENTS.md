@@ -7,7 +7,7 @@ It is part of the MyFinanceSpace monorepo. Read the [root AGENTS.md](../../AGENT
 - Figures, statuses, dates and validation come from `@myfinancespace/core` (for example `@myfinancespace/core/format`). If a screen needs a rule the core doesn't have, add it to `packages/core`, not to this app (Article 2).
 - The core runs on Hermes, so it may only use the `Intl` APIs Hermes implements. `packages/core/eslint.config.mjs` lists the ones it lacks.
 - Data will come from the HTTP API (`/api/v1`, Article 4). Until then, screens may read the core's fixtures.
-- Colours and sizes come from design tokens (Article 10). They don't exist for mobile yet (gap G12), so don't hard-code values: leave screens on platform defaults until the tokens land.
+- Colours and sizes come from `@myfinancespace/tokens` (Article 10), through `usePalette` in `src/theme.ts` and the components in `src/components/`. Don't hard-code values.
 
 ## Expo has changed — do not trust your training data
 
